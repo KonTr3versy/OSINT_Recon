@@ -1,0 +1,6 @@
+version = 1
+
+[metadata]
+requires-python = ">=3.11"
+
+[packages]
