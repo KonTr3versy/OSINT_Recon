@@ -127,14 +127,14 @@ def parse_dmarc(txt_records: List[str]) -> Dict:
     return dmarc
 
 
-def check_dkim(domain: str, enhanced: bool) -> Dict:
-    if not enhanced:
+def check_dkim(domain: str, active: bool) -> Dict:
+    if not active:
         return {
             "status": "unknown",
             "selectors_checked": [],
             "found": [],
             "mode": "passive",
-            "note": "Passive mode does not query selectors.",
+            "note": "Passive mode does not query DKIM selectors.",
         }
     found = []
     for selector in COMMON_DKIM_SELECTORS:
@@ -146,12 +146,12 @@ def check_dkim(domain: str, enhanced: bool) -> Dict:
         "status": "checked",
         "selectors_checked": COMMON_DKIM_SELECTORS,
         "found": found,
-        "mode": "enhanced",
-        "note": "Enhanced mode checked common safe-list selectors.",
+        "mode": "active",
+        "note": "Active mode checked common safe-list selectors.",
     }
 
 
-def run(domain: str, enhanced: bool) -> DnsMailProfileResult:
+def run(domain: str, active: bool) -> DnsMailProfileResult:
     records = {
         "A": resolve_records(domain, "A"),
         "AAAA": resolve_records(domain, "AAAA"),
@@ -162,7 +162,7 @@ def run(domain: str, enhanced: bool) -> DnsMailProfileResult:
 
     spf = parse_spf(records["TXT"])
     dmarc = parse_dmarc(resolve_records(f"_dmarc.{domain}", "TXT"))
-    dkim = check_dkim(domain, enhanced)
+    dkim = check_dkim(domain, active)
 
     risk_flags = []
     recommendations = []

@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 class Mode(str, Enum):
     passive = "passive"
-    enhanced = "enhanced"
+    active = "active"
 
 
 class CacheMode(str, Enum):

@@ -58,9 +58,15 @@ def score_email_posture(spf: dict, dmarc: dict, dkim: dict) -> tuple[int, list[s
     return _score_from_rules(100, rules)
 
 
-def score_exposure(services: list[dict]) -> tuple[int, list[str], list[dict]]:
+def score_exposure(services: list[dict], security_headers: list[dict] | None = None) -> tuple[int, list[str], list[dict]]:
     service_count = len(services or [])
     exposure_deduction = min(30, 5 * service_count)
+
+    sites_missing_headers = 0
+    if security_headers:
+        sites_missing_headers = sum(1 for sh in security_headers if sh.get("missing"))
+    header_deduction = min(20, 5 * sites_missing_headers)
+
     rules = [
         {
             "id": "exposure.third_party.services_detected",
@@ -68,12 +74,19 @@ def score_exposure(services: list[dict]) -> tuple[int, list[str], list[dict]]:
             "deduction": exposure_deduction,
             "triggered": service_count > 0,
             "evidence_ref": "evidence.third_party_intel.services",
-        }
+        },
+        {
+            "id": "exposure.web.missing_security_headers",
+            "label": "Web portals missing security headers",
+            "deduction": header_deduction,
+            "triggered": sites_missing_headers > 0,
+            "evidence_ref": "evidence.web_signals.security_headers",
+        },
     ]
     return _score_from_rules(100, rules)
 
 
-def build_backlog(spf: dict, dmarc: dict, dkim: dict) -> list[dict]:
+def build_backlog(spf: dict, dmarc: dict, dkim: dict, security_headers: list[dict] | None = None) -> list[dict]:
     now = datetime.now(timezone.utc).isoformat()
     backlog = []
     if spf.get("raw") is None:
@@ -128,20 +141,39 @@ def build_backlog(spf: dict, dmarc: dict, dkim: dict) -> list[dict]:
                 "evidence_ref": "evidence.dns_mail_profile.dkim_selectors_checked",
             }
         )
+    for sh in security_headers or []:
+        missing = sh.get("missing", [])
+        if missing:
+            backlog.append(
+                {
+                    "title": f"Add missing security headers on {sh['url']}",
+                    "priority": "Medium",
+                    "evidence": f"Missing headers: {', '.join(missing)}",
+                    "remediation": "Configure web server to send " + ", ".join(missing),
+                    "source": "web_signals",
+                    "confidence": "high",
+                    "last_verified_at": now,
+                    "evidence_ref": "evidence.web_signals.security_headers",
+                }
+            )
     return backlog
 
 
 def run(results: dict) -> SynthesisModuleResult:
     dns = results.get("dns_mail_profile", {})
     third_party = results.get("third_party_intel", {})
+    web = results.get("web_signals", {})
 
     spf = dns.get("spf", {})
     dmarc = dns.get("dmarc", {})
     dkim = dns.get("dkim", {})
     services = third_party.get("services", [])
+    security_headers = web.get("security_headers", [])
 
     email_score, email_notes, email_applied_rules = score_email_posture(spf, dmarc, dkim)
-    exposure_score, exposure_notes, exposure_applied_rules = score_exposure(services)
+    exposure_score, exposure_notes, exposure_applied_rules = score_exposure(
+        services, security_headers
+    )
 
     scoring_rubric = {
         "email_posture": {
@@ -182,13 +214,19 @@ def run(results: dict) -> SynthesisModuleResult:
                     "label": "Third-party intel shows exposed services",
                     "deduction_formula": "min(30, 5 * service_count)",
                     "evidence_ref": "evidence.third_party_intel.services",
-                }
+                },
+                {
+                    "id": "exposure.web.missing_security_headers",
+                    "label": "Web portals missing security headers",
+                    "deduction_formula": "min(20, 5 * sites_missing_headers)",
+                    "evidence_ref": "evidence.web_signals.security_headers",
+                },
             ],
             "applied_rules": exposure_applied_rules,
         },
     }
 
-    prioritized = build_backlog(spf, dmarc, dkim)
+    prioritized = build_backlog(spf, dmarc, dkim, security_headers)
 
     summary = {
         "email_posture_score": email_score,
@@ -211,6 +249,14 @@ def run(results: dict) -> SynthesisModuleResult:
             },
         },
         "third_party_intel": third_party,
+        "web_signals": {
+            "security_headers": security_headers,
+            "provenance": {
+                "source": "web_signals",
+                "confidence": "high",
+                "last_verified_at": datetime.now(timezone.utc).isoformat(),
+            },
+        },
     }
 
     return SynthesisModuleResult(

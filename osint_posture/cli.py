@@ -40,7 +40,12 @@ def run(
     domain: str = typer.Option(..., "--domain"),
     company: str | None = typer.Option(None, "--company"),
     out: str = typer.Option("./output", "--out"),
-    mode: Mode = typer.Option(Mode.passive, "--mode"),
+    mode: Mode = typer.Option(
+        Mode.passive,
+        "--mode",
+        help="passive: DNS + CT logs + third-party intel only, no direct target contact. "
+        "active: adds HTTP probing, DKIM checks, doc discovery, and security header analysis.",
+    ),
     cache: CacheMode = typer.Option(CacheMode.sqlite, "--cache"),
     max_requests_per_minute: int = typer.Option(60, "--max-requests-per-minute"),
     enable_third_party_intel: bool = typer.Option(False, "--enable-third-party-intel"),
