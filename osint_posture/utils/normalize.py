@@ -16,6 +16,16 @@ def is_valid_subdomain(name: str) -> bool:
         return False
     if ".." in name:
         return False
+    if len(name) > 253:
+        return False
+    parts = name.split(".")
+    for part in parts:
+        if not part:
+            return False
+        if len(part) > 63:
+            return False
+        if part.startswith("-") or part.endswith("-"):
+            return False
     return True
 
 

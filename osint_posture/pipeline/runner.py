@@ -17,6 +17,7 @@ from ..modules import (
     web_signals,
 )
 from ..reporting.csv_backlog import build_csv
+from ..reporting.html import build_html
 from ..reporting.markdown import build_summary
 from ..utils.cache import build_cache
 from ..utils.http import HttpClient
@@ -173,11 +174,14 @@ async def run_pipeline(config: RunConfig) -> dict:
 
     summary_md = build_summary(synth_payload)
     backlog_csv = build_csv(synth_payload)
+    report_html = build_html(synth_payload)
 
     with open(f"{artifacts_path}/summary.md", "w", encoding="utf-8") as f:
         f.write(summary_md)
     with open(f"{artifacts_path}/remediation_backlog.csv", "w", encoding="utf-8") as f:
         f.write(backlog_csv)
+    with open(f"{artifacts_path}/report.html", "w", encoding="utf-8") as f:
+        f.write(report_html)
 
     findings = {
         **synth_payload,

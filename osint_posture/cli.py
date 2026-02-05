@@ -12,6 +12,7 @@ import typer
 from .models.config import CacheMode, Mode, RunConfig
 from .pipeline.runner import run_pipeline_sync
 from .reporting.csv_backlog import build_csv
+from .reporting.html import build_html
 from .reporting.markdown import build_summary
 
 app = typer.Typer(add_completion=False)
@@ -80,11 +81,13 @@ def report(input: str = typer.Option(..., "--input")) -> None:
 
     summary_md = build_summary(findings)
     backlog_csv = build_csv(findings)
+    report_html = build_html(findings)
 
     artifacts = path / "artifacts"
     artifacts.mkdir(parents=True, exist_ok=True)
     (artifacts / "summary.md").write_text(summary_md, encoding="utf-8")
     (artifacts / "remediation_backlog.csv").write_text(backlog_csv, encoding="utf-8")
+    (artifacts / "report.html").write_text(report_html, encoding="utf-8")
 
     typer.echo("reports generated")
 

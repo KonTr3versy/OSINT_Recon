@@ -1,4 +1,5 @@
 from osint_posture.reporting.csv_backlog import build_csv
+from osint_posture.reporting.html import build_html
 from osint_posture.reporting.markdown import build_summary
 
 
@@ -16,6 +17,8 @@ def test_reporting_outputs_basic_sections():
     }
     md = build_summary(findings)
     csv_text = build_csv(findings)
+    html = build_html(findings)
     assert "OSINT Posture Summary" in md
     assert "Publish SPF" in md
     assert "priority,title,evidence,remediation" in csv_text
+    assert "OSINT Posture Report" in html

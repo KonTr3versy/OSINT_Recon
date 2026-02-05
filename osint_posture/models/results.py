@@ -24,6 +24,9 @@ class DnsMailProfileResult(BaseModel):
 class PassiveSubdomainsResult(BaseModel):
     subdomains: list[str]
     attribution: dict
+    removed_wildcards: int = 0
+    invalid_entries: int = 0
+    total_seen: int = 0
 
 
 class ThirdPartyIntelResult(BaseModel):

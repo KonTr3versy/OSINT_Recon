@@ -108,8 +108,14 @@ def run(results: dict) -> SynthesisModuleResult:
         "exposure_notes": exposure_notes,
     }
 
+    spf_raw = spf.get("raw") or ""
+    dmarc_raw = dmarc.get("raw") or ""
     evidence = {
-        "dns_mail_profile": dns,
+        "dns_mail_profile": {
+            "spf_raw": spf_raw[:300],
+            "dmarc_raw": dmarc_raw[:300],
+            "dkim_selectors_checked": dkim.get("selectors_checked", []),
+        },
         "third_party_intel": third_party,
     }
 

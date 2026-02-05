@@ -40,6 +40,11 @@ Validate findings JSON:
 osint-posture validate --input ./output/example.com/<timestamp>/findings.json
 ```
 
+Reports generated:
+- `artifacts/summary.md`
+- `artifacts/remediation_backlog.csv`
+- `artifacts/report.html`
+
 ## Data sources and limitations
 
 - DNS: `A/AAAA`, `NS`, `MX`, `TXT` using `dnspython`.

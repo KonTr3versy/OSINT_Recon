@@ -13,3 +13,4 @@ def test_synthesis_scores_penalties():
     synth = run(results)
     assert synth.summary["email_posture_score"] < 100
     assert synth.summary["exposure_score"] < 100
+    assert "spf_raw" in synth.evidence["dns_mail_profile"]
