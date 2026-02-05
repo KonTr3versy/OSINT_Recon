@@ -26,6 +26,8 @@ def build_html(findings: dict) -> str:
             f"<td>{escape(str(item.get('title', '')))}</td>"
             f"<td>{escape(str(item.get('evidence', '')))}</td>"
             f"<td>{escape(str(item.get('remediation', '')))}</td>"
+            f"<td>{escape(str(item.get('source', '')))}</td>"
+            f"<td>{escape(str(item.get('confidence', '')))}</td>"
             "</tr>"
         )
 
@@ -72,10 +74,12 @@ def build_html(findings: dict) -> str:
         <th>Title</th>
         <th>Evidence</th>
         <th>Remediation</th>
+        <th>Source</th>
+        <th>Confidence</th>
       </tr>
     </thead>
     <tbody>
-      {backlog_rows or '<tr><td colspan="4">No prioritized items.</td></tr>'}
+      {backlog_rows or '<tr><td colspan="6">No prioritized items.</td></tr>'}
     </tbody>
   </table>
 </body>

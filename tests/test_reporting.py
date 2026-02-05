@@ -12,6 +12,9 @@ def test_reporting_outputs_basic_sections():
                 "title": "Publish SPF",
                 "evidence": "No SPF",
                 "remediation": "Add SPF",
+                "source": "dns_mail_profile",
+                "confidence": "high",
+                "evidence_ref": "evidence.dns_mail_profile.spf_raw",
             }
         ],
     }
@@ -20,5 +23,6 @@ def test_reporting_outputs_basic_sections():
     html = build_html(findings)
     assert "OSINT Posture Summary" in md
     assert "Publish SPF" in md
-    assert "priority,title,evidence,remediation" in csv_text
+    assert "priority,title,evidence,remediation,source,confidence,evidence_ref" in csv_text
     assert "OSINT Posture Report" in html
+    assert "dns_mail_profile" in html

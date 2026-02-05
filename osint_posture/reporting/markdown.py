@@ -24,6 +24,11 @@ def build_summary(findings: dict) -> str:
     if not backlog:
         lines.append("- No prioritized items.")
     for item in backlog:
-        lines.append(f"- {item.get('priority')} | {item.get('title')}: {item.get('remediation')}")
+        source = item.get("source", "unknown")
+        confidence = item.get("confidence", "unknown")
+        lines.append(
+            f"- {item.get('priority')} | {item.get('title')}: {item.get('remediation')} "
+            f"(source={source}, confidence={confidence})"
+        )
 
     return "\n".join(lines)
