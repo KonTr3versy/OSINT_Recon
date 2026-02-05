@@ -23,3 +23,8 @@ testpaths = ["tests"]
 line-length = 100
 
 [tool.uv]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]

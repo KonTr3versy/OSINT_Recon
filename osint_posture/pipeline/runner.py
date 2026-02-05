@@ -115,7 +115,7 @@ async def run_pipeline(config: RunConfig) -> dict:
         "dns_mail_profile",
         dns_mail_profile.run,
         config.domain,
-        config.mode.value == "enhanced",
+        config.mode.value == "active",
     )
     modules.append(dns_result)
     _write_json(f"{raw_path}/dns_mail_profile.json", dns_result.data)
@@ -161,6 +161,7 @@ async def run_pipeline(config: RunConfig) -> dict:
             subdomains_result.data.get("subdomains", []),
             http,
             config.max_pages,
+            config.mode.value,
         ),
     )
     modules.append(doc_result)

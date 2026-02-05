@@ -17,7 +17,12 @@ def build_candidates(domain: str, subdomains: Iterable[str]) -> list[str]:
     return urls
 
 
-async def run(domain: str, subdomains: list[str], http: HttpClient, max_pages: int) -> DocSignalsResult:
+async def run(
+    domain: str, subdomains: list[str], http: HttpClient, max_pages: int, mode: str = "passive"
+) -> DocSignalsResult:
+    if mode != "active":
+        return DocSignalsResult(documents=[])
+
     docs = []
     candidates = build_candidates(domain, subdomains)[:max_pages]
     for url in candidates:

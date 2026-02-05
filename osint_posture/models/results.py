@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Optional
-
 from pydantic import BaseModel, Field
 
 
@@ -40,6 +38,7 @@ class WebSignalsResult(BaseModel):
     portal_candidates: list[str] = Field(default_factory=list)
     technology_hints: list[str] = Field(default_factory=list)
     headers_samples: list[dict] = Field(default_factory=list)
+    security_headers: list[dict] = Field(default_factory=list)
 
 
 class DocSignalsResult(BaseModel):
