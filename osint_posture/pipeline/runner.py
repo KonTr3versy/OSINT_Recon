@@ -13,6 +13,7 @@ from ..modules import (
     dns_mail_profile,
     doc_signals,
     passive_subdomains,
+    passive_users,
     scope_init,
     synthesis,
     third_party_intel,

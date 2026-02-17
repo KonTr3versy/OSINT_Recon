@@ -27,6 +27,14 @@ class PassiveSubdomainsResult(BaseModel):
     total_seen: int = 0
 
 
+
+
+class PassiveUsersResult(BaseModel):
+    status: str
+    users: list[dict] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    attribution: dict = Field(default_factory=dict)
+
 class ThirdPartyIntelResult(BaseModel):
     status: str
     services: list[dict] = Field(default_factory=list)

@@ -70,6 +70,7 @@ HTTP and DNS activity is policy-enforced and logged to `raw/network_ledger.json`
 
 - DNS: `dnspython` with explicit policy (`none` / `minimal` / `full`).
 - Certificate Transparency: `crt.sh` JSON endpoint for passive subdomain discovery.
+- Passive user discovery: GitHub user search API using company/domain query hints (third-party only; validate association).
 - Optional third-party intel: Shodan and Censys only when explicitly enabled and API keys provided.
 - Web signals: passive mode infers from DNS/subdomains only; low-noise mode performs a small bounded set of `HEAD` checks.
 - Documents: low-noise heuristics with metadata-only checks.

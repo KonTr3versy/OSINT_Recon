@@ -163,6 +163,7 @@ def run(results: dict) -> SynthesisModuleResult:
     dns = results.get("dns_mail_profile", {})
     third_party = results.get("third_party_intel", {})
     web = results.get("web_signals", {})
+    users = results.get("passive_users", {})
 
     spf = dns.get("spf", {})
     dmarc = dns.get("dmarc", {})
@@ -249,6 +250,7 @@ def run(results: dict) -> SynthesisModuleResult:
             },
         },
         "third_party_intel": third_party,
+        "passive_users": users,
         "web_signals": {
             "security_headers": security_headers,
             "provenance": {
