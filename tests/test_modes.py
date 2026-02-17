@@ -1,7 +1,7 @@
 import asyncio
 
 from osint_posture.cli import parse_mode_alias
-from osint_posture.models.config import DnsPolicy, Mode
+from osint_posture.models.config import Mode
 from osint_posture.modules.dns_mail_profile import check_dkim
 from osint_posture.modules.doc_signals import run as doc_run
 from osint_posture.modules.synthesis import build_backlog, score_exposure
@@ -22,20 +22,14 @@ def test_mode_aliases_emit_deprecation(capsys):
 
 
 def test_dkim_low_noise_mode_sets_mode_field():
-    dkim = check_dkim("nonexistent.invalid", mode=Mode.low_noise, dns_policy=DnsPolicy.full)
+    dkim = check_dkim("nonexistent.invalid", mode=Mode.low_noise)
     assert dkim["mode"] == "low-noise"
     assert dkim["status"] == "checked"
     assert "Low-noise mode" in dkim["note"]
 
 
-def test_dkim_low_noise_minimal_dns_skips_selector_checks():
-    dkim = check_dkim("example.com", mode=Mode.low_noise, dns_policy=DnsPolicy.minimal)
-    assert dkim["status"] == "skipped"
-    assert "dns-policy full" in dkim["note"].lower()
-
-
 def test_dkim_passive_skips_selectors():
-    dkim = check_dkim("example.com", mode=Mode.passive, dns_policy=DnsPolicy.full)
+    dkim = check_dkim("example.com", mode=Mode.passive)
     assert dkim["mode"] == "passive"
     assert dkim["status"] == "unknown"
     assert dkim["selectors_checked"] == []
