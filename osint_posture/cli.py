@@ -9,7 +9,7 @@ from uuid import uuid4
 
 import typer
 
-from .models.config import CacheMode, Mode, RunConfig
+from .models.config import CacheMode, DnsPolicy, Mode, RunConfig
 from .pipeline.runner import run_pipeline_sync
 from .reporting.csv_backlog import build_csv
 from .reporting.html import build_html
@@ -35,19 +35,39 @@ def setup_logging() -> None:
     logging.basicConfig(level=logging.INFO, handlers=[handler])
 
 
+def parse_mode_alias(raw_mode: str) -> Mode:
+    mode = raw_mode.strip().lower()
+    if mode == "enhanced":
+        typer.echo("[deprecation] --mode enhanced is deprecated; use --mode low-noise", err=True)
+        return Mode.low_noise
+    if mode == "active":
+        typer.echo("[deprecation] --mode active is deprecated; use --mode low-noise", err=True)
+        return Mode.low_noise
+    return Mode(mode)
+
+
 @app.command()
 def run(
     domain: str = typer.Option(..., "--domain"),
     company: str | None = typer.Option(None, "--company"),
     out: str = typer.Option("./output", "--out"),
-    mode: Mode = typer.Option(
-        Mode.passive,
+    mode: str = typer.Option(
+        Mode.passive.value,
         "--mode",
-        help="passive: DNS + CT logs + third-party intel only, no direct target contact. "
-        "active: adds HTTP probing, DKIM checks, doc discovery, and security header analysis.",
+        help="passive (default): no target HTTP; low-noise: tiny capped target HEAD checks. Aliases: enhanced, active (deprecated).",
+    ),
+    dns_policy: DnsPolicy = typer.Option(
+        DnsPolicy.minimal,
+        "--dns-policy",
+        help="none: no DNS; minimal: apex TXT+MX and _dmarc TXT; full: A/AAAA/NS/MX/TXT plus DKIM safelist in low-noise.",
     ),
     cache: CacheMode = typer.Option(CacheMode.sqlite, "--cache"),
     max_requests_per_minute: int = typer.Option(60, "--max-requests-per-minute"),
+    max_target_http_requests_total: int = typer.Option(12, "--max-target-http-requests-total"),
+    max_target_http_per_host: int = typer.Option(3, "--max-target-http-per-host"),
+    max_target_http_per_minute: int = typer.Option(12, "--max-target-http-per-minute"),
+    max_bytes_per_response: int = typer.Option(262_144, "--max-bytes-per-response"),
+    max_target_dns_queries: int = typer.Option(25, "--max-target-dns-queries"),
     enable_third_party_intel: bool = typer.Option(False, "--enable-third-party-intel"),
     shodan_key: str | None = typer.Option(None, "--shodan-key"),
     censys_id: str | None = typer.Option(None, "--censys-id"),
@@ -55,12 +75,19 @@ def run(
 ) -> None:
     """Run a posture assessment for a domain."""
     setup_logging()
+    resolved_mode = parse_mode_alias(mode)
     config = RunConfig(
         domain=domain,
         company=company,
-        mode=mode,
+        mode=resolved_mode,
+        dns_policy=dns_policy,
         cache=cache,
         max_requests_per_minute=max_requests_per_minute,
+        max_target_http_requests_total=max_target_http_requests_total,
+        max_target_http_per_host=max_target_http_per_host,
+        max_target_http_per_minute=max_target_http_per_minute,
+        max_bytes_per_response=max_bytes_per_response,
+        max_target_dns_queries=max_target_dns_queries,
         enable_third_party_intel=enable_third_party_intel,
         shodan_key=shodan_key,
         censys_id=censys_id,
