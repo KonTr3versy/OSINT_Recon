@@ -53,7 +53,7 @@ async def run(
     headers_samples = []
     security_headers = []
 
-    if mode == "active":
+    if mode == "low-noise":
         targets = portal_candidates[:max_pages]
         for host in targets:
             url = f"https://{host}"

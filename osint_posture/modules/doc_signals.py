@@ -20,7 +20,7 @@ def build_candidates(domain: str, subdomains: Iterable[str]) -> list[str]:
 async def run(
     domain: str, subdomains: list[str], http: HttpClient, max_pages: int, mode: str = "passive"
 ) -> DocSignalsResult:
-    if mode != "active":
+    if mode != "low-noise":
         return DocSignalsResult(documents=[])
 
     docs = []

@@ -16,16 +16,23 @@ uv pip install -e .
 
 ## How to run
 
-Passive run (default):
+Passive run (default, no target HTTP):
 
 ```bash
 osint-posture run --domain example.com --out ./output
 ```
 
-Enhanced run (safe, limited requests):
+Low-noise run (strictly bounded target HTTP checks):
 
 ```bash
-osint-posture run --domain example.com --mode enhanced --max-requests-per-minute 60
+osint-posture run --domain example.com --mode low-noise --dns-policy minimal
+```
+
+Backward-compatible aliases (deprecated):
+
+```bash
+osint-posture run --domain example.com --mode enhanced
+osint-posture run --domain example.com --mode active
 ```
 
 Generate reports from an existing run:
@@ -45,17 +52,32 @@ Reports generated:
 - `artifacts/remediation_backlog.csv`
 - `artifacts/report.html`
 
+Raw run artifacts:
+- `raw/network_ledger.json` (auditable outbound network ledger)
+- `raw/run_manifest.json` (sanitized config, budgets, and ledger totals)
+
+## Noise Contract
+
+- `--mode passive` (default): no target HTTP requests. Third-party OSINT calls allowed.
+- `--mode low-noise`: allows only tiny, policy-enforced target HTTP checks (HEAD by default), with strict budgets.
+- `--dns-policy none`: no DNS queries.
+- `--dns-policy minimal` (default): only apex TXT/MX + `_dmarc` TXT.
+- `--dns-policy full`: A/AAAA/NS/MX/TXT and DKIM safelist checks in low-noise mode.
+
+HTTP and DNS activity is policy-enforced and logged to `raw/network_ledger.json`.
+
 ## Data sources and limitations
 
-- DNS: `A/AAAA`, `NS`, `MX`, `TXT` using `dnspython`.
+- DNS: `dnspython` with explicit policy (`none` / `minimal` / `full`).
 - Certificate Transparency: `crt.sh` JSON endpoint for passive subdomain discovery.
+- Passive user discovery: GitHub user search API using company/domain query hints (third-party only; validate association).
 - Optional third-party intel: Shodan and Censys only when explicitly enabled and API keys provided.
-- Web signals: passive mode avoids crawling and only infers from DNS/subdomains. Enhanced mode makes a **small capped** set of `HEAD/GET` requests.
-- Documents: lightweight heuristics with size checks and metadata-only extraction.
+- Web signals: passive mode infers from DNS/subdomains only; low-noise mode performs a small bounded set of `HEAD` checks.
+- Documents: low-noise heuristics with metadata-only checks.
 
 Limitations:
 - No brute-force or high-volume crawling.
-- DKIM selectors are only checked from a small safe list and only in enhanced mode.
+- No exploitation, port scanning, or offensive workflows.
 - Third-party intel is best-effort and may be rate-limited or skipped if not configured.
 
 ## Defensive intent
