@@ -9,7 +9,13 @@ from pydantic import BaseModel, Field
 
 class Mode(str, Enum):
     passive = "passive"
-    active = "active"
+    low_noise = "low-noise"
+
+
+class DnsPolicy(str, Enum):
+    none = "none"
+    minimal = "minimal"
+    full = "full"
 
 
 class CacheMode(str, Enum):
@@ -22,6 +28,7 @@ class RunConfig(BaseModel):
     domain: str
     company: Optional[str] = None
     mode: Mode = Mode.passive
+    dns_policy: DnsPolicy = DnsPolicy.minimal
     cache: CacheMode = CacheMode.sqlite
     max_requests_per_minute: int = 60
     enable_third_party_intel: bool = False
@@ -34,6 +41,12 @@ class RunConfig(BaseModel):
     max_pages: int = 10
     timeout_seconds: float = 8.0
     retries: int = 2
+    max_target_http_requests_total: int = 12
+    max_target_http_per_host: int = 3
+    max_target_http_per_minute: int = 12
+    max_redirects: int = 0
+    max_bytes_per_response: int = 262_144
+    max_target_dns_queries: int = 25
 
     @property
     def run_path(self) -> str:
