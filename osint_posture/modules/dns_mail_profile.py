@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Dict, List
 
-from ..models.config import DnsPolicy, Mode
+from ..models.config import Mode
 from ..models.results import DnsMailProfileResult
 from ..utils.dns import DnsClient, resolve_records
 
@@ -128,7 +128,7 @@ def parse_dmarc(txt_records: List[str]) -> Dict:
     return dmarc
 
 
-def check_dkim(domain: str, mode: Mode, dns_policy: DnsPolicy, dns_client: DnsClient | None = None) -> Dict:
+def check_dkim(domain: str, mode: Mode, dns_client: DnsClient | None = None) -> Dict:
     if mode != Mode.low_noise:
         return {
             "status": "unknown",
@@ -161,29 +161,22 @@ def check_dkim(domain: str, mode: Mode, dns_policy: DnsPolicy, dns_client: DnsCl
 
 
 def run(domain: str, mode: Mode = Mode.passive, dns_client: DnsClient | None = None) -> DnsMailProfileResult:
-    dns_policy = dns_client.policy.dns_policy if (dns_client and dns_client.policy) else DnsPolicy.full
-    records = {"A": [], "AAAA": [], "NS": [], "MX": [], "TXT": []}
-
-    if dns_policy == DnsPolicy.full:
-        records["A"] = resolve_records(domain, "A", client=dns_client)
-        records["AAAA"] = resolve_records(domain, "AAAA", client=dns_client)
-        records["NS"] = resolve_records(domain, "NS", client=dns_client)
-    if dns_policy in {DnsPolicy.full, DnsPolicy.minimal}:
-        records["MX"] = resolve_records(domain, "MX", client=dns_client)
-        records["TXT"] = resolve_records(domain, "TXT", client=dns_client)
-
-    dmarc_txt = []
-    if dns_policy in {DnsPolicy.full, DnsPolicy.minimal}:
-        dmarc_txt = resolve_records(f"_dmarc.{domain}", "TXT", client=dns_client)
+    records = {
+        "A": resolve_records(domain, "A", client=dns_client),
+        "AAAA": resolve_records(domain, "AAAA", client=dns_client),
+        "NS": resolve_records(domain, "NS", client=dns_client),
+        "MX": resolve_records(domain, "MX", client=dns_client),
+        "TXT": resolve_records(domain, "TXT", client=dns_client),
+    }
 
     spf = parse_spf(records["TXT"])
-    dmarc = parse_dmarc(dmarc_txt)
-    dkim = check_dkim(domain, mode=mode, dns_policy=dns_policy, dns_client=dns_client)
+    dmarc = parse_dmarc(resolve_records(f"_dmarc.{domain}", "TXT", client=dns_client))
+    dkim = check_dkim(domain, mode=mode, dns_client=dns_client)
 
     risk_flags = []
     recommendations = []
 
-    if dns_policy == DnsPolicy.none:
+    if dns_client and dns_client.policy and dns_client.policy.dns_policy.value == "none":
         risk_flags.append("DNS policy is none; DNS-based checks were skipped.")
     if spf["warnings"]:
         risk_flags.extend(spf["warnings"])

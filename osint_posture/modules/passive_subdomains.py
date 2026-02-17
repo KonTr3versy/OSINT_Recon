@@ -50,31 +50,9 @@ async def _from_bufferover(domain: str, http: HttpClient) -> tuple[list[str], st
 
     names: list[str] = []
     for item in data.get("FDNS_A", []) if isinstance(data, dict) else []:
+        # format is often "ip,hostname"
         host = str(item).split(",")[-1].strip()
         names.append(host)
-    for item in data.get("RDNS", []) if isinstance(data, dict) else []:
-        host = str(item).split(",")[-1].strip()
-        names.append(host)
-    return names, None
-
-
-async def _from_urlscan(domain: str, http: HttpClient) -> tuple[list[str], str | None]:
-    url = f"https://urlscan.io/api/v1/search/?q=domain:{domain}&size=100"
-    try:
-        resp = await http.get(url)
-        data = resp.json()
-    except Exception as exc:
-        return [], f"urlscan failed: {exc}"
-
-    names: list[str] = []
-    for item in data.get("results", []) if isinstance(data, dict) else []:
-        page = item.get("page", {})
-        domain_seen = page.get("domain")
-        if domain_seen:
-            names.append(str(domain_seen))
-        ptr = page.get("ptr")
-        if ptr:
-            names.append(str(ptr))
     return names, None
 
 
@@ -107,7 +85,6 @@ async def run(domain: str, http: HttpClient, cache: Optional[CacheBase] = None) 
         "crt.sh": _from_crtsh,
         "certspotter": _from_certspotter,
         "bufferover": _from_bufferover,
-        "urlscan": _from_urlscan,
     }
 
     all_names: list[str] = []
@@ -131,7 +108,6 @@ async def run(domain: str, http: HttpClient, cache: Optional[CacheBase] = None) 
             "sources": list(source_fetchers.keys()),
             "per_source_counts": per_source_counts,
             "warnings": warnings,
-            "note": "Passive third-party aggregation; validate ownership and recency before action.",
         },
         removed_wildcards=removed_wildcards,
         invalid_entries=invalid_entries,

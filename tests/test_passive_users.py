@@ -1,6 +1,6 @@
 import asyncio
 
-from osint_posture.modules.passive_users import _confidence, _query_terms, run
+from osint_posture.modules.passive_users import _query_terms, run
 
 
 class _Resp:
@@ -23,44 +23,25 @@ class _Http:
         raise RuntimeError("boom")
 
 
-def test_query_terms_expand_and_dedupe():
-    terms = _query_terms("example.com", "Example Org")
-    assert terms[0] == "example.com"
-    assert "example" in terms
-    assert "exampleorg" in terms
-    assert "example-org" in terms
+def test_query_terms_dedupes():
+    assert _query_terms("example.com", "Example") == ["example.com", "Example"]
+    assert _query_terms("example.com", "") == ["example.com"]
 
 
-def test_confidence_rules():
-    assert _confidence("example", "example", "example.com") == "high"
-    assert _confidence("example-sec", "example", "example.com") == "medium"
-    assert _confidence("alice", "example", "example.com") == "low"
-
-
-def test_passive_users_collects_from_multiple_sources_and_sorts():
-    # For terms example.com + example, 3 sources each => 6 payloads
+def test_passive_users_collects_and_dedupes_handles():
     http = _Http(
         [
-            {"items": [{"login": "example", "html_url": "g1", "type": "User", "score": 10.0}]},
-            [{"username": "examplegl", "web_url": "gl1"}],
-            {"completions": [{"components": {"username": {"val": "example-sec"}}}]},
-            {"items": [{"login": "alice", "html_url": "g2", "type": "User", "score": 1.0}]},
-            [{"username": "alicegl", "web_url": "gl2"}],
-            {"completions": []},
+            {"items": [{"login": "alice", "html_url": "u1", "type": "User", "score": 1.0}]},
+            {"items": [{"login": "alice", "html_url": "u1", "type": "User", "score": 2.0}, {"login": "bob", "html_url": "u2", "type": "User", "score": 3.0}]},
         ]
     )
-    result = asyncio.run(run("example.com", None, http, max_results=10))
+    result = asyncio.run(run("example.com", "Example", http, max_results=10))
     assert result["status"] == "ok"
-    handles = [u["handle"] for u in result["users"]]
-    assert handles[0] == "example"
-    assert "example-sec" in handles
-    assert "examplegl" in handles
-    assert result["attribution"]["per_source_counts"]["github_search"] >= 1
-    assert result["attribution"]["per_source_counts"]["gitlab_search"] >= 1
-    assert result["attribution"]["per_source_counts"]["keybase_autocomplete"] >= 1
+    assert [u["handle"] for u in result["users"]] == ["alice", "bob"]
+    assert len(http.calls) == 2
 
 
-def test_passive_users_handles_source_errors():
+def test_passive_users_handles_errors():
     class _ErrHttp:
         async def get(self, url, **kwargs):
             raise RuntimeError("nope")
