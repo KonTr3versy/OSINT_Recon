@@ -137,6 +137,14 @@ def check_dkim(domain: str, mode: Mode, dns_client: DnsClient | None = None) -> 
             "mode": "passive",
             "note": "Passive mode does not query DKIM selectors.",
         }
+    if dns_policy != DnsPolicy.full:
+        return {
+            "status": "skipped",
+            "selectors_checked": [],
+            "found": [],
+            "mode": "low-noise",
+            "note": "DKIM selector checks require --dns-policy full.",
+        }
     found = []
     for selector in COMMON_DKIM_SELECTORS:
         name = f"{selector}._domainkey.{domain}"
