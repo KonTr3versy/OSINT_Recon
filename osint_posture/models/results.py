@@ -15,6 +15,10 @@ class DnsMailProfileResult(BaseModel):
     spf: dict
     dmarc: dict
     dkim: dict
+    mta_sts: dict = Field(default_factory=dict)
+    tls_rpt: dict = Field(default_factory=dict)
+    bimi: dict = Field(default_factory=dict)
+    dane: dict = Field(default_factory=dict)
     risk_flags: list[str] = Field(default_factory=list)
     recommendations: list[str] = Field(default_factory=list)
 

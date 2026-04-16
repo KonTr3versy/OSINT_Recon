@@ -24,7 +24,13 @@ def _score_from_rules(max_score: int, rules: list[dict]) -> tuple[int, list[str]
     return max(score, 0), notes, applied
 
 
-def score_email_posture(spf: dict, dmarc: dict, dkim: dict) -> tuple[int, list[str], list[dict]]:
+def score_email_posture(
+    spf: dict,
+    dmarc: dict,
+    dkim: dict,
+    mta_sts: dict | None = None,
+    tls_rpt: dict | None = None,
+) -> tuple[int, list[str], list[dict]]:
     rules = [
         {
             "id": "email.spf.missing",
@@ -53,6 +59,23 @@ def score_email_posture(spf: dict, dmarc: dict, dkim: dict) -> tuple[int, list[s
             "deduction": 10,
             "triggered": dkim.get("status") == "checked" and not dkim.get("found"),
             "evidence_ref": "evidence.dns_mail_profile.dkim_selectors_checked",
+        },
+        {
+            "id": "email.mta_sts.missing",
+            "label": "No MTA-STS record (inbound TLS not enforced)",
+            "deduction": 10,
+            "triggered": (mta_sts or {}).get("status") != "skipped"
+            and not (mta_sts or {}).get("present"),
+            "evidence_ref": "evidence.dns_mail_profile.mta_sts",
+        },
+        {
+            "id": "email.tls_rpt.missing_with_mta_sts",
+            "label": "TLS-RPT absent despite MTA-STS being configured",
+            "deduction": 5,
+            "triggered": (mta_sts or {}).get("present")
+            and (tls_rpt or {}).get("status") != "skipped"
+            and not (tls_rpt or {}).get("present"),
+            "evidence_ref": "evidence.dns_mail_profile.tls_rpt",
         },
     ]
     return _score_from_rules(100, rules)
@@ -135,6 +158,8 @@ def build_backlog(
     security_headers: list[dict] | None = None,
     takeover_candidates: list[dict] | None = None,
     tls_hosts: list[dict] | None = None,
+    mta_sts: dict | None = None,
+    tls_rpt: dict | None = None,
 ) -> list[dict]:
     now = datetime.now(timezone.utc).isoformat()
     backlog = []
@@ -237,6 +262,41 @@ def build_backlog(
             }
         )
 
+    if (mta_sts or {}).get("status") != "skipped" and not (mta_sts or {}).get("present"):
+        backlog.append(
+            {
+                "title": "Publish MTA-STS policy to enforce inbound SMTP TLS",
+                "priority": "Medium",
+                "evidence": "No MTA-STS TXT record found at _mta-sts.<domain>",
+                "remediation": (
+                    "Create _mta-sts.<domain> TXT record with v=STSv1 and host the policy file at "
+                    "https://mta-sts.<domain>/.well-known/mta-sts.txt with mode: enforce. "
+                    "See RFC 8461."
+                ),
+                "source": "dns_mail_profile",
+                "confidence": "high",
+                "last_verified_at": now,
+                "evidence_ref": "evidence.dns_mail_profile.mta_sts",
+            }
+        )
+
+    if (mta_sts or {}).get("present") and (tls_rpt or {}).get("status") != "skipped" and not (tls_rpt or {}).get("present"):
+        backlog.append(
+            {
+                "title": "Add TLS-RPT reporting alongside MTA-STS",
+                "priority": "Low",
+                "evidence": "MTA-STS is configured but _smtp._tls.<domain> TLS-RPT record is absent",
+                "remediation": (
+                    "Create _smtp._tls.<domain> TXT record: "
+                    "v=TLSRPTv1; rua=mailto:tls-report@<domain>. See RFC 8460."
+                ),
+                "source": "dns_mail_profile",
+                "confidence": "high",
+                "last_verified_at": now,
+                "evidence_ref": "evidence.dns_mail_profile.tls_rpt",
+            }
+        )
+
     for h in tls_hosts or []:
         host = h.get("host", "")
         cert = h.get("cert") or {}
@@ -298,12 +358,16 @@ def run(results: dict) -> SynthesisModuleResult:
     spf = dns.get("spf", {})
     dmarc = dns.get("dmarc", {})
     dkim = dns.get("dkim", {})
+    mta_sts = dns.get("mta_sts", {})
+    tls_rpt = dns.get("tls_rpt", {})
     services = third_party.get("services", [])
     security_headers = web.get("security_headers", [])
     takeover_candidates = takeover.get("candidates", [])
     tls_hosts = tls.get("hosts", [])
 
-    email_score, email_notes, email_applied_rules = score_email_posture(spf, dmarc, dkim)
+    email_score, email_notes, email_applied_rules = score_email_posture(
+        spf, dmarc, dkim, mta_sts, tls_rpt
+    )
     exposure_score, exposure_notes, exposure_applied_rules = score_exposure(
         services, security_headers, takeover_candidates, tls_hosts
     )
@@ -335,6 +399,18 @@ def run(results: dict) -> SynthesisModuleResult:
                     "label": "No DKIM selectors found in safe list",
                     "deduction": 10,
                     "evidence_ref": "evidence.dns_mail_profile.dkim_selectors_checked",
+                },
+                {
+                    "id": "email.mta_sts.missing",
+                    "label": "No MTA-STS record (inbound TLS not enforced)",
+                    "deduction": 10,
+                    "evidence_ref": "evidence.dns_mail_profile.mta_sts",
+                },
+                {
+                    "id": "email.tls_rpt.missing_with_mta_sts",
+                    "label": "TLS-RPT absent despite MTA-STS being configured",
+                    "deduction": 5,
+                    "evidence_ref": "evidence.dns_mail_profile.tls_rpt",
                 },
             ],
             "applied_rules": email_applied_rules,
@@ -377,7 +453,9 @@ def run(results: dict) -> SynthesisModuleResult:
         },
     }
 
-    prioritized = build_backlog(spf, dmarc, dkim, security_headers, takeover_candidates, tls_hosts)
+    prioritized = build_backlog(
+        spf, dmarc, dkim, security_headers, takeover_candidates, tls_hosts, mta_sts, tls_rpt
+    )
 
     summary = {
         "email_posture_score": email_score,
@@ -393,6 +471,8 @@ def run(results: dict) -> SynthesisModuleResult:
             "spf_raw": spf_raw[:300],
             "dmarc_raw": dmarc_raw[:300],
             "dkim_selectors_checked": dkim.get("selectors_checked", []),
+            "mta_sts": mta_sts,
+            "tls_rpt": tls_rpt,
             "provenance": {
                 "source": "dns_mail_profile",
                 "confidence": "high",
