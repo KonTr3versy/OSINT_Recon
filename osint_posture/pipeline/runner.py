@@ -16,6 +16,7 @@ from ..modules import (
     passive_users,
     scope_init,
     synthesis,
+    takeover_signals,
     third_party_intel,
     web_signals,
 )
@@ -97,7 +98,7 @@ async def _wrap_module_async(name: str, coro) -> ModuleResult:
 
 def _build_manifest(context: RunContext) -> dict:
     redacted = context.config.model_dump()
-    for secret in ("shodan_key", "censys_id", "censys_secret"):
+    for secret in ("shodan_key", "censys_id", "censys_secret", "vt_key", "abuseipdb_key", "hibp_key"):
         if redacted.get(secret):
             redacted[secret] = "***"
     return {
@@ -140,6 +141,17 @@ async def run_pipeline(config: RunConfig) -> dict:
         subdomains_result = await _wrap_module_async("passive_subdomains", passive_subdomains.run(config.domain, context.http_client, context.cache))
         modules.append(subdomains_result)
         _write_json(f"{raw_path}/passive_subdomains.json", subdomains_result.data)
+
+        takeover_result = _wrap_module(
+            "takeover_signals",
+            takeover_signals.run,
+            config.domain,
+            subdomains_result.data.get("subdomains", []),
+            context.dns_client,
+            config.dns_policy,
+        )
+        modules.append(takeover_result)
+        _write_json(f"{raw_path}/takeover_signals.json", takeover_result.data)
 
         third_party_result = await _wrap_module_async(
             "third_party_intel",

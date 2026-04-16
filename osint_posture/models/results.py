@@ -53,6 +53,14 @@ class DocSignalsResult(BaseModel):
     documents: list[dict] = Field(default_factory=list)
 
 
+class TakeoverSignalsResult(BaseModel):
+    status: str
+    candidates: list[dict] = Field(default_factory=list)
+    checked: int = 0
+    skipped_reason: str | None = None
+    warnings: list[str] = Field(default_factory=list)
+
+
 class SynthesisModuleResult(BaseModel):
     summary: dict
     scoring_rubric: dict

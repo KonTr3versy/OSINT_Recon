@@ -58,7 +58,11 @@ def score_email_posture(spf: dict, dmarc: dict, dkim: dict) -> tuple[int, list[s
     return _score_from_rules(100, rules)
 
 
-def score_exposure(services: list[dict], security_headers: list[dict] | None = None) -> tuple[int, list[str], list[dict]]:
+def score_exposure(
+    services: list[dict],
+    security_headers: list[dict] | None = None,
+    takeover_candidates: list[dict] | None = None,
+) -> tuple[int, list[str], list[dict]]:
     service_count = len(services or [])
     exposure_deduction = min(30, 5 * service_count)
 
@@ -66,6 +70,9 @@ def score_exposure(services: list[dict], security_headers: list[dict] | None = N
     if security_headers:
         sites_missing_headers = sum(1 for sh in security_headers if sh.get("missing"))
     header_deduction = min(20, 5 * sites_missing_headers)
+
+    nxdomain_count = sum(1 for c in (takeover_candidates or []) if c.get("nxdomain"))
+    takeover_deduction = min(40, 20 * nxdomain_count)
 
     rules = [
         {
@@ -82,11 +89,24 @@ def score_exposure(services: list[dict], security_headers: list[dict] | None = N
             "triggered": sites_missing_headers > 0,
             "evidence_ref": "evidence.web_signals.security_headers",
         },
+        {
+            "id": "exposure.takeover.nxdomain_candidates",
+            "label": "Potential subdomain takeover (NXDOMAIN CNAME)",
+            "deduction": takeover_deduction,
+            "triggered": nxdomain_count > 0,
+            "evidence_ref": "evidence.takeover_signals.candidates",
+        },
     ]
     return _score_from_rules(100, rules)
 
 
-def build_backlog(spf: dict, dmarc: dict, dkim: dict, security_headers: list[dict] | None = None) -> list[dict]:
+def build_backlog(
+    spf: dict,
+    dmarc: dict,
+    dkim: dict,
+    security_headers: list[dict] | None = None,
+    takeover_candidates: list[dict] | None = None,
+) -> list[dict]:
     now = datetime.now(timezone.utc).isoformat()
     backlog = []
     if spf.get("raw") is None:
@@ -156,6 +176,38 @@ def build_backlog(spf: dict, dmarc: dict, dkim: dict, security_headers: list[dic
                     "evidence_ref": "evidence.web_signals.security_headers",
                 }
             )
+
+    for candidate in takeover_candidates or []:
+        sub = candidate.get("subdomain", "")
+        service = candidate.get("service", "unknown service")
+        cname_target = candidate.get("cname_target", "")
+        confidence = candidate.get("confidence", "medium")
+        priority = candidate.get("priority", "Medium")
+        if candidate.get("nxdomain"):
+            evidence = f"{sub} CNAME → {cname_target} (NXDOMAIN — unclaimed {service} resource)"
+            remediation = (
+                f"Remove the CNAME record for {sub} or reclaim the {service} resource "
+                "immediately; an attacker can host content under your subdomain."
+            )
+        else:
+            evidence = f"{sub} CNAME → {cname_target} ({service})"
+            remediation = (
+                f"Verify that the {service} resource at {cname_target} is owned and active; "
+                f"if decommissioned, remove the CNAME for {sub}."
+            )
+        backlog.append(
+            {
+                "title": f"Investigate subdomain takeover risk: {sub}",
+                "priority": priority,
+                "evidence": evidence,
+                "remediation": remediation,
+                "source": "takeover_signals",
+                "confidence": confidence,
+                "last_verified_at": now,
+                "evidence_ref": "evidence.takeover_signals.candidates",
+            }
+        )
+
     return backlog
 
 
@@ -164,16 +216,18 @@ def run(results: dict) -> SynthesisModuleResult:
     third_party = results.get("third_party_intel", {})
     web = results.get("web_signals", {})
     users = results.get("passive_users", {})
+    takeover = results.get("takeover_signals", {})
 
     spf = dns.get("spf", {})
     dmarc = dns.get("dmarc", {})
     dkim = dns.get("dkim", {})
     services = third_party.get("services", [])
     security_headers = web.get("security_headers", [])
+    takeover_candidates = takeover.get("candidates", [])
 
     email_score, email_notes, email_applied_rules = score_email_posture(spf, dmarc, dkim)
     exposure_score, exposure_notes, exposure_applied_rules = score_exposure(
-        services, security_headers
+        services, security_headers, takeover_candidates
     )
 
     scoring_rubric = {
@@ -222,12 +276,18 @@ def run(results: dict) -> SynthesisModuleResult:
                     "deduction_formula": "min(20, 5 * sites_missing_headers)",
                     "evidence_ref": "evidence.web_signals.security_headers",
                 },
+                {
+                    "id": "exposure.takeover.nxdomain_candidates",
+                    "label": "Potential subdomain takeover (NXDOMAIN CNAME)",
+                    "deduction_formula": "min(40, 20 * nxdomain_count)",
+                    "evidence_ref": "evidence.takeover_signals.candidates",
+                },
             ],
             "applied_rules": exposure_applied_rules,
         },
     }
 
-    prioritized = build_backlog(spf, dmarc, dkim, security_headers)
+    prioritized = build_backlog(spf, dmarc, dkim, security_headers, takeover_candidates)
 
     summary = {
         "email_posture_score": email_score,
@@ -251,6 +311,14 @@ def run(results: dict) -> SynthesisModuleResult:
         },
         "third_party_intel": third_party,
         "passive_users": users,
+        "takeover_signals": {
+            "candidates": takeover_candidates,
+            "provenance": {
+                "source": "takeover_signals",
+                "confidence": "high",
+                "last_verified_at": datetime.now(timezone.utc).isoformat(),
+            },
+        },
         "web_signals": {
             "security_headers": security_headers,
             "provenance": {

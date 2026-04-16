@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Dict, List
 
-from ..models.config import Mode
+from ..models.config import DnsPolicy, Mode
 from ..models.results import DnsMailProfileResult
 from ..utils.dns import DnsClient, resolve_records
 
@@ -137,7 +137,10 @@ def check_dkim(domain: str, mode: Mode, dns_client: DnsClient | None = None) -> 
             "mode": "passive",
             "note": "Passive mode does not query DKIM selectors.",
         }
-    if dns_policy != DnsPolicy.full:
+    effective_dns_policy = (
+        dns_client.policy.dns_policy if (dns_client and dns_client.policy) else DnsPolicy.full
+    )
+    if effective_dns_policy != DnsPolicy.full:
         return {
             "status": "skipped",
             "selectors_checked": [],
