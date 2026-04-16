@@ -18,6 +18,7 @@ from ..modules import (
     synthesis,
     takeover_signals,
     third_party_intel,
+    tls_profile,
     web_signals,
 )
 from ..pipeline.context import RunContext
@@ -173,6 +174,18 @@ async def run_pipeline(config: RunConfig) -> dict:
         )
         modules.append(web_result)
         _write_json(f"{raw_path}/web_signals.json", web_result.data)
+
+        tls_result = _wrap_module(
+            "tls_profile",
+            tls_profile.run,
+            config.domain,
+            web_result.data.get("portal_candidates", []),
+            config.mode.value,
+            context.policy,
+            context.ledger,
+        )
+        modules.append(tls_result)
+        _write_json(f"{raw_path}/tls_profile.json", tls_result.data)
 
         doc_result = await _wrap_module_async(
             "doc_signals",

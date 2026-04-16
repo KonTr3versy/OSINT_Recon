@@ -53,6 +53,14 @@ class DocSignalsResult(BaseModel):
     documents: list[dict] = Field(default_factory=list)
 
 
+class TlsProfileResult(BaseModel):
+    status: str
+    hosts: list[dict] = Field(default_factory=list)
+    new_subdomains_from_san: list[str] = Field(default_factory=list)
+    skipped_reason: str | None = None
+    warnings: list[str] = Field(default_factory=list)
+
+
 class TakeoverSignalsResult(BaseModel):
     status: str
     candidates: list[dict] = Field(default_factory=list)

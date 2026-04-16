@@ -62,6 +62,7 @@ def score_exposure(
     services: list[dict],
     security_headers: list[dict] | None = None,
     takeover_candidates: list[dict] | None = None,
+    tls_hosts: list[dict] | None = None,
 ) -> tuple[int, list[str], list[dict]]:
     service_count = len(services or [])
     exposure_deduction = min(30, 5 * service_count)
@@ -73,6 +74,19 @@ def score_exposure(
 
     nxdomain_count = sum(1 for c in (takeover_candidates or []) if c.get("nxdomain"))
     takeover_deduction = min(40, 20 * nxdomain_count)
+
+    self_signed_count = sum(
+        1 for h in (tls_hosts or []) if (h.get("cert") or {}).get("is_self_signed")
+    )
+    tls_self_signed_deduction = min(30, 15 * self_signed_count)
+
+    expiring_count = sum(
+        1
+        for h in (tls_hosts or [])
+        if (h.get("cert") or {}).get("days_until_expiry") is not None
+        and (h.get("cert") or {})["days_until_expiry"] <= 30
+    )
+    tls_expiry_deduction = min(20, 10 * expiring_count)
 
     rules = [
         {
@@ -96,6 +110,20 @@ def score_exposure(
             "triggered": nxdomain_count > 0,
             "evidence_ref": "evidence.takeover_signals.candidates",
         },
+        {
+            "id": "exposure.tls.self_signed_cert",
+            "label": "Self-signed TLS certificate on public portal",
+            "deduction": tls_self_signed_deduction,
+            "triggered": self_signed_count > 0,
+            "evidence_ref": "evidence.tls_profile.hosts",
+        },
+        {
+            "id": "exposure.tls.cert_expiring_soon",
+            "label": "TLS certificate expiring within 30 days",
+            "deduction": tls_expiry_deduction,
+            "triggered": expiring_count > 0,
+            "evidence_ref": "evidence.tls_profile.hosts",
+        },
     ]
     return _score_from_rules(100, rules)
 
@@ -106,6 +134,7 @@ def build_backlog(
     dkim: dict,
     security_headers: list[dict] | None = None,
     takeover_candidates: list[dict] | None = None,
+    tls_hosts: list[dict] | None = None,
 ) -> list[dict]:
     now = datetime.now(timezone.utc).isoformat()
     backlog = []
@@ -208,6 +237,53 @@ def build_backlog(
             }
         )
 
+    for h in tls_hosts or []:
+        host = h.get("host", "")
+        cert = h.get("cert") or {}
+        days = cert.get("days_until_expiry")
+        if cert.get("is_self_signed"):
+            backlog.append(
+                {
+                    "title": f"Replace self-signed certificate on {host}",
+                    "priority": "High",
+                    "evidence": f"{host} presented a self-signed TLS certificate",
+                    "remediation": (
+                        "Replace with a certificate from a trusted CA (e.g. Let's Encrypt). "
+                        "Browsers will warn users and block automated clients."
+                    ),
+                    "source": "tls_profile",
+                    "confidence": "high",
+                    "last_verified_at": now,
+                    "evidence_ref": "evidence.tls_profile.hosts",
+                }
+            )
+        elif days is not None and days <= 30:
+            backlog.append(
+                {
+                    "title": f"Certificate expiring in {days} day(s) on {host}",
+                    "priority": "High",
+                    "evidence": f"TLS certificate for {host} expires in {days} days",
+                    "remediation": f"Renew the TLS certificate for {host} immediately.",
+                    "source": "tls_profile",
+                    "confidence": "high",
+                    "last_verified_at": now,
+                    "evidence_ref": "evidence.tls_profile.hosts",
+                }
+            )
+        elif days is not None and days <= 90:
+            backlog.append(
+                {
+                    "title": f"Certificate expiring within 90 days on {host}",
+                    "priority": "Medium",
+                    "evidence": f"TLS certificate for {host} expires in {days} days",
+                    "remediation": f"Schedule renewal of the TLS certificate for {host}.",
+                    "source": "tls_profile",
+                    "confidence": "high",
+                    "last_verified_at": now,
+                    "evidence_ref": "evidence.tls_profile.hosts",
+                }
+            )
+
     return backlog
 
 
@@ -217,6 +293,7 @@ def run(results: dict) -> SynthesisModuleResult:
     web = results.get("web_signals", {})
     users = results.get("passive_users", {})
     takeover = results.get("takeover_signals", {})
+    tls = results.get("tls_profile", {})
 
     spf = dns.get("spf", {})
     dmarc = dns.get("dmarc", {})
@@ -224,10 +301,11 @@ def run(results: dict) -> SynthesisModuleResult:
     services = third_party.get("services", [])
     security_headers = web.get("security_headers", [])
     takeover_candidates = takeover.get("candidates", [])
+    tls_hosts = tls.get("hosts", [])
 
     email_score, email_notes, email_applied_rules = score_email_posture(spf, dmarc, dkim)
     exposure_score, exposure_notes, exposure_applied_rules = score_exposure(
-        services, security_headers, takeover_candidates
+        services, security_headers, takeover_candidates, tls_hosts
     )
 
     scoring_rubric = {
@@ -282,12 +360,24 @@ def run(results: dict) -> SynthesisModuleResult:
                     "deduction_formula": "min(40, 20 * nxdomain_count)",
                     "evidence_ref": "evidence.takeover_signals.candidates",
                 },
+                {
+                    "id": "exposure.tls.self_signed_cert",
+                    "label": "Self-signed TLS certificate on public portal",
+                    "deduction_formula": "min(30, 15 * self_signed_count)",
+                    "evidence_ref": "evidence.tls_profile.hosts",
+                },
+                {
+                    "id": "exposure.tls.cert_expiring_soon",
+                    "label": "TLS certificate expiring within 30 days",
+                    "deduction_formula": "min(20, 10 * expiring_count)",
+                    "evidence_ref": "evidence.tls_profile.hosts",
+                },
             ],
             "applied_rules": exposure_applied_rules,
         },
     }
 
-    prioritized = build_backlog(spf, dmarc, dkim, security_headers, takeover_candidates)
+    prioritized = build_backlog(spf, dmarc, dkim, security_headers, takeover_candidates, tls_hosts)
 
     summary = {
         "email_posture_score": email_score,
@@ -311,6 +401,15 @@ def run(results: dict) -> SynthesisModuleResult:
         },
         "third_party_intel": third_party,
         "passive_users": users,
+        "tls_profile": {
+            "hosts": tls_hosts,
+            "new_subdomains_from_san": tls.get("new_subdomains_from_san", []),
+            "provenance": {
+                "source": "tls_profile",
+                "confidence": "high",
+                "last_verified_at": datetime.now(timezone.utc).isoformat(),
+            },
+        },
         "takeover_signals": {
             "candidates": takeover_candidates,
             "provenance": {
