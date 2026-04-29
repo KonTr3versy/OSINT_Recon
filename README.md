@@ -65,6 +65,26 @@ Execute one Cloudflare Queue job payload with the local Python recon worker:
 osint-posture cloudflare-job --input ./job.json --out ./output
 ```
 
+Run the continuous Cloudflare Queue worker with R2 artifact upload:
+
+```bash
+export CF_ACCOUNT_ID="<account-id>"
+export CF_QUEUE_ID="<queue-id>"
+export CF_QUEUES_TOKEN="<queues-read-write-token>"
+export CF_CONTROL_PLANE_URL="https://<worker-name>.<subdomain>.workers.dev"
+export CF_R2_BUCKET="osint-recon-artifacts"
+export CF_R2_ACCESS_KEY_ID="<r2-access-key-id>"
+export CF_R2_SECRET_ACCESS_KEY="<r2-secret-access-key>"
+
+osint-posture cloudflare-worker --out ./output
+```
+
+For a one-shot local smoke test:
+
+```bash
+osint-posture cloudflare-worker --once --skip-r2 --out ./output
+```
+
 Reports generated:
 - `artifacts/summary.md`
 - `artifacts/remediation_backlog.csv`
@@ -97,6 +117,7 @@ Cloudflare control plane:
 
 Python executor:
 - `osint-posture cloudflare-job` accepts the Cloudflare queue payload shape and executes the existing deterministic pipeline.
+- `osint-posture cloudflare-worker` pulls jobs from Cloudflare Queues, executes recon, uploads the run directory to R2, and posts the result back to the Cloudflare control plane.
 - The LLM never performs target DNS, target HTTP, or paid third-party intel directly.
 - Network activity still passes through `NetworkPolicy` and is recorded in `NetworkLedger`.
 
@@ -115,6 +136,7 @@ Deploy Cloudflare resources:
 npx wrangler d1 create osint-recon-control-plane
 npx wrangler r2 bucket create osint-recon-artifacts
 npx wrangler queues create osint-recon-jobs
+npx wrangler queues consumer http add osint-recon-jobs
 npm run db:migrate:remote
 npm run deploy
 ```
