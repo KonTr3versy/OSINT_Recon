@@ -70,6 +70,7 @@ Create Cloudflare resources, then update `wrangler.toml` with your real D1 datab
 npx wrangler d1 create osint-recon-control-plane
 npx wrangler r2 bucket create osint-recon-artifacts
 npx wrangler queues create osint-recon-jobs
+npx wrangler queues consumer http add osint-recon-jobs
 npm run db:migrate:remote
 npm run deploy
 ```
@@ -79,6 +80,29 @@ The internal Python worker should consume `ReconJobPayload` messages from the `o
 ```text
 POST /api/jobs/{cloudflareJobId}/result
 ```
+
+## Python Queue Worker
+
+The Python package includes a pull consumer for the Cloudflare queue:
+
+```bash
+export CF_ACCOUNT_ID="<account-id>"
+export CF_QUEUE_ID="<queue-id>"
+export CF_QUEUES_TOKEN="<queues-read-write-token>"
+export CF_CONTROL_PLANE_URL="https://<worker-name>.<subdomain>.workers.dev"
+export CF_R2_BUCKET="osint-recon-artifacts"
+export CF_R2_ACCESS_KEY_ID="<r2-access-key-id>"
+export CF_R2_SECRET_ACCESS_KEY="<r2-secret-access-key>"
+
+osint-posture cloudflare-worker --out ./output
+```
+
+Use `--once` to process a single batch and exit. Use `--skip-r2` for local smoke tests where you want to verify queue pull, recon execution, and result callbacks without uploading artifacts.
+
+Required Cloudflare setup:
+- Enable HTTP pull for `osint-recon-jobs`.
+- Create a Cloudflare API token with Account Queues read/write permissions for `CF_QUEUES_TOKEN`.
+- Create R2 S3 credentials with object read/write permissions for `CF_R2_ACCESS_KEY_ID` and `CF_R2_SECRET_ACCESS_KEY`.
 
 ## Safety Boundary
 

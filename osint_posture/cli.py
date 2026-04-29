@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -11,7 +12,10 @@ import typer
 from .models.config import CacheMode, DnsPolicy, Mode
 from .pipeline.service import create_run_config, execute_run
 from .platform.cloudflare_bridge import CloudflareReconJob, execute_cloudflare_job
+from .platform.cloudflare_queue import CloudflareQueueClient
+from .platform.cloudflare_worker import CloudflareControlPlaneClient, CloudflareReconWorker
 from .platform.db import Database, seed_defaults
+from .platform.r2_artifacts import R2ArtifactUploader
 from .platform.worker import process_next_run
 from .reporting.csv_backlog import build_csv
 from .reporting.html import build_html
@@ -183,3 +187,96 @@ def cloudflare_job(
     job = CloudflareReconJob.model_validate_json(raw)
     result = execute_cloudflare_job(job, out_dir=out)
     typer.echo(json.dumps(result, indent=2, default=str))
+
+
+@app.command("cloudflare-worker")
+def cloudflare_worker(
+    account_id: str | None = typer.Option(None, "--account-id", envvar="CF_ACCOUNT_ID"),
+    queue_id: str | None = typer.Option(None, "--queue-id", envvar="CF_QUEUE_ID"),
+    queues_token: str | None = typer.Option(None, "--queues-token", envvar="CF_QUEUES_TOKEN"),
+    callback_url: str | None = typer.Option(None, "--callback-url", envvar="CF_CONTROL_PLANE_URL"),
+    org_id: str = typer.Option("default", "--org-id", envvar="CF_ORG_ID"),
+    control_plane_token: str | None = typer.Option(None, "--control-plane-token", envvar="CF_CONTROL_PLANE_TOKEN"),
+    r2_bucket: str | None = typer.Option(None, "--r2-bucket", envvar="CF_R2_BUCKET"),
+    r2_endpoint: str | None = typer.Option(None, "--r2-endpoint", envvar="CF_R2_ENDPOINT"),
+    r2_access_key_id: str | None = typer.Option(None, "--r2-access-key-id", envvar="CF_R2_ACCESS_KEY_ID"),
+    r2_secret_access_key: str | None = typer.Option(None, "--r2-secret-access-key", envvar="CF_R2_SECRET_ACCESS_KEY"),
+    r2_prefix: str = typer.Option("runs", "--r2-prefix", envvar="CF_R2_PREFIX"),
+    skip_r2: bool = typer.Option(False, "--skip-r2"),
+    out: str = typer.Option("./output", "--out"),
+    batch_size: int = typer.Option(1, "--batch-size"),
+    visibility_timeout_ms: int = typer.Option(3_600_000, "--visibility-timeout-ms"),
+    retry_delay_seconds: int = typer.Option(300, "--retry-delay-seconds"),
+    poll_interval_seconds: float = typer.Option(10.0, "--poll-interval-seconds"),
+    once: bool = typer.Option(False, "--once"),
+) -> None:
+    """Pull Cloudflare Queue jobs, run recon, upload artifacts to R2, and post results back."""
+    missing = [
+        name
+        for name, value in {
+            "CF_ACCOUNT_ID/--account-id": account_id,
+            "CF_QUEUE_ID/--queue-id": queue_id,
+            "CF_QUEUES_TOKEN/--queues-token": queues_token,
+            "CF_CONTROL_PLANE_URL/--callback-url": callback_url,
+        }.items()
+        if not value
+    ]
+    if missing:
+        typer.echo(f"missing required Cloudflare worker settings: {', '.join(missing)}", err=True)
+        raise typer.Exit(1)
+
+    if not skip_r2:
+        r2_endpoint = r2_endpoint or f"https://{account_id}.r2.cloudflarestorage.com"
+        r2_access_key_id = r2_access_key_id or os.getenv("AWS_ACCESS_KEY_ID")
+        r2_secret_access_key = r2_secret_access_key or os.getenv("AWS_SECRET_ACCESS_KEY")
+        missing_r2 = [
+            name
+            for name, value in {
+                "CF_R2_BUCKET/--r2-bucket": r2_bucket,
+                "CF_R2_ACCESS_KEY_ID/AWS_ACCESS_KEY_ID/--r2-access-key-id": r2_access_key_id,
+                "CF_R2_SECRET_ACCESS_KEY/AWS_SECRET_ACCESS_KEY/--r2-secret-access-key": r2_secret_access_key,
+            }.items()
+            if not value
+        ]
+        if missing_r2:
+            typer.echo(f"missing required R2 settings: {', '.join(missing_r2)}", err=True)
+            raise typer.Exit(1)
+
+    queue = CloudflareQueueClient(
+        account_id=account_id,
+        queue_id=queue_id,
+        api_token=queues_token,
+    )
+    control_plane = CloudflareControlPlaneClient(
+        base_url=callback_url,
+        org_id=org_id,
+        api_token=control_plane_token,
+    )
+    r2 = None
+    if not skip_r2:
+        r2 = R2ArtifactUploader(
+            bucket=r2_bucket,
+            endpoint_url=r2_endpoint,
+            access_key_id=r2_access_key_id,
+            secret_access_key=r2_secret_access_key,
+            key_prefix=r2_prefix,
+        )
+
+    worker = CloudflareReconWorker(
+        queue=queue,
+        control_plane=control_plane,
+        r2=r2,
+        out_dir=out,
+        batch_size=batch_size,
+        visibility_timeout_ms=visibility_timeout_ms,
+        retry_delay_seconds=retry_delay_seconds,
+    )
+    try:
+        if once:
+            result = worker.run_once()
+            typer.echo(json.dumps(result.__dict__, indent=2))
+        else:
+            worker.run_forever(poll_interval_seconds=poll_interval_seconds)
+    finally:
+        queue.close()
+        control_plane.close()
