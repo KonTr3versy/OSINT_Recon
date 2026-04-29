@@ -1,0 +1,23 @@
+{
+  "name": "osint-recon-agent-control-plane",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:migrate:local": "wrangler d1 execute OSINT_RECON_DB --local --file=./schema.sql",
+    "db:migrate:remote": "wrangler d1 execute OSINT_RECON_DB --remote --file=./schema.sql",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "agents": "^0.1.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260415.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.0",
+    "wrangler": "^4.13.0"
+  }
+}

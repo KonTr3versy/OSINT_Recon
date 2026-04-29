@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Dict, List
 
-from ..models.config import Mode
+from ..models.config import DnsPolicy, Mode
 from ..models.results import DnsMailProfileResult
 from ..utils.dns import DnsClient, resolve_records
 
@@ -128,7 +128,12 @@ def parse_dmarc(txt_records: List[str]) -> Dict:
     return dmarc
 
 
-def check_dkim(domain: str, mode: Mode, dns_client: DnsClient | None = None) -> Dict:
+def check_dkim(
+    domain: str,
+    mode: Mode,
+    dns_client: DnsClient | None = None,
+    dns_policy: DnsPolicy = DnsPolicy.full,
+) -> Dict:
     if mode != Mode.low_noise:
         return {
             "status": "unknown",
@@ -160,7 +165,12 @@ def check_dkim(domain: str, mode: Mode, dns_client: DnsClient | None = None) -> 
     }
 
 
-def run(domain: str, mode: Mode = Mode.passive, dns_client: DnsClient | None = None) -> DnsMailProfileResult:
+def run(
+    domain: str,
+    mode: Mode = Mode.passive,
+    dns_client: DnsClient | None = None,
+    dns_policy: DnsPolicy = DnsPolicy.minimal,
+) -> DnsMailProfileResult:
     records = {
         "A": resolve_records(domain, "A", client=dns_client),
         "AAAA": resolve_records(domain, "AAAA", client=dns_client),
@@ -171,7 +181,7 @@ def run(domain: str, mode: Mode = Mode.passive, dns_client: DnsClient | None = N
 
     spf = parse_spf(records["TXT"])
     dmarc = parse_dmarc(resolve_records(f"_dmarc.{domain}", "TXT", client=dns_client))
-    dkim = check_dkim(domain, mode=mode, dns_client=dns_client)
+    dkim = check_dkim(domain, mode=mode, dns_client=dns_client, dns_policy=dns_policy)
 
     risk_flags = []
     recommendations = []

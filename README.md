@@ -47,6 +47,24 @@ Validate findings JSON:
 osint-posture validate --input ./output/example.com/<timestamp>/findings.json
 ```
 
+Run the internal team platform API and dashboard:
+
+```bash
+osint-posture serve --host 127.0.0.1 --port 8000
+```
+
+Process one queued platform run:
+
+```bash
+osint-posture worker-once --out ./output
+```
+
+Execute one Cloudflare Queue job payload with the local Python recon worker:
+
+```bash
+osint-posture cloudflare-job --input ./job.json --out ./output
+```
+
 Reports generated:
 - `artifacts/summary.md`
 - `artifacts/remediation_backlog.csv`
@@ -65,6 +83,52 @@ Raw run artifacts:
 - `--dns-policy full`: A/AAAA/NS/MX/TXT and DKIM safelist checks in low-noise mode.
 
 HTTP and DNS activity is policy-enforced and logged to `raw/network_ledger.json`.
+
+## Agentic team platform
+
+The preferred agentic architecture uses Cloudflare as the stateful AI control plane and this Python package as the trusted recon executor.
+
+Cloudflare control plane:
+- `cloudflare/agent-control-plane` contains a Workers + Agents SDK app.
+- The `ReconAgent` owns stateful planning, chat, scheduling, approval coordination, and LLM-backed explanations.
+- D1 stores assets, recon plans, approval requests, queued job metadata, run summaries, and audit events.
+- Cloudflare Queues hands approved recon jobs to the internal Python worker.
+- R2 is the intended storage layer for generated reports, CSV backlogs, raw ledgers, and manifests.
+
+Python executor:
+- `osint-posture cloudflare-job` accepts the Cloudflare queue payload shape and executes the existing deterministic pipeline.
+- The LLM never performs target DNS, target HTTP, or paid third-party intel directly.
+- Network activity still passes through `NetworkPolicy` and is recorded in `NetworkLedger`.
+
+Run the Cloudflare control plane locally:
+
+```bash
+cd cloudflare/agent-control-plane
+npm install
+npm run db:migrate:local
+npm run dev
+```
+
+Deploy Cloudflare resources:
+
+```bash
+npx wrangler d1 create osint-recon-control-plane
+npx wrangler r2 bucket create osint-recon-artifacts
+npx wrangler queues create osint-recon-jobs
+npm run db:migrate:remote
+npm run deploy
+```
+
+The local FastAPI platform also wraps the deterministic recon pipeline in an approval-gated web control plane for internal development and fallback deployments.
+
+V1 capabilities:
+- Manual asset inventory with allowed mode, DNS policy ceiling, third-party intel allowance, and default schedule.
+- Local RBAC users seeded for development: `admin@example.com`, `analyst@example.com`, `approver@example.com`, and `viewer@example.com`. API requests can select a user with the `X-User-Email` header.
+- Agent plan proposal for scheduled recon runs. Low-noise target contact, full DNS policy, and third-party intel require approval before execution.
+- Queue-backed run execution through `worker-once`, with module status, findings, backlog items, artifacts, network ledger totals, and audit events persisted.
+- A compact dashboard at `/` plus JSON APIs for assets, recon plans, approvals, runs, artifacts, and backlog.
+
+Default persistence is SQLite at `./osint_platform.db` for local use. Set `OSINT_POSTURE_DATABASE_URL` to a PostgreSQL SQLAlchemy URL for internal server deployment.
 
 ## Data sources and limitations
 

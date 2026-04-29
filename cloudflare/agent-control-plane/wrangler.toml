@@ -1,0 +1,28 @@
+name = "osint-recon-agent-control-plane"
+main = "src/index.ts"
+compatibility_date = "2026-04-01"
+
+[ai]
+binding = "AI"
+
+[durable_objects]
+bindings = [
+  { name = "OSINT_AGENT", class_name = "ReconAgent" }
+]
+
+[[migrations]]
+tag = "v1"
+new_classes = ["ReconAgent"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "osint-recon-control-plane"
+database_id = "replace-with-d1-database-id"
+
+[[r2_buckets]]
+binding = "ARTIFACTS"
+bucket_name = "osint-recon-artifacts"
+
+[[queues.producers]]
+binding = "RECON_JOBS"
+queue = "osint-recon-jobs"
