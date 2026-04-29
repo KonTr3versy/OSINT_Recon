@@ -1,25 +1,68 @@
 from __future__ import annotations
 
-from datetime import datetime
 from html import escape
+
+from .common import (
+    applied_scoring_rules,
+    backlog_counts,
+    evidence_snapshot,
+    generated_at,
+    score_items,
+    sorted_backlog,
+)
 
 
 def build_html(findings: dict) -> str:
     summary = findings.get("summary", {})
     backlog = findings.get("prioritized_backlog", [])
-
-    email_score = summary.get("email_posture_score", "n/a")
-    exposure_score = summary.get("exposure_score", "n/a")
-    email_notes = summary.get("email_notes", [])
-    exposure_notes = summary.get("exposure_notes", [])
+    scoring_rubric = findings.get("scoring_rubric", {})
+    evidence = findings.get("evidence", {})
+    scores = score_items(summary)
+    counts = backlog_counts(backlog)
+    applied_rules = applied_scoring_rules(scoring_rubric)
+    snapshot = evidence_snapshot(evidence)
+    notes = [*summary.get("email_notes", []), *summary.get("exposure_notes", [])]
 
     def li(items: list[str]) -> str:
         if not items:
-            return "<li>None</li>"
+            return "<li>No score-impacting findings were identified.</li>"
         return "".join(f"<li>{escape(str(x))}</li>" for x in items)
 
+    score_cards = "".join(
+        "<div class=\"score\">"
+        f"<span>{escape(item['label'])}</span>"
+        f"<strong>{escape(str(item['score']))}</strong>"
+        f"<em>{escape(item['band'])}</em>"
+        "</div>"
+        for item in scores
+    )
+
+    count_pills = "".join(
+        f"<span class=\"pill\">{escape(priority)}: {count}</span>"
+        for priority, count in counts.items()
+    ) or "<span class=\"pill\">No backlog items</span>"
+
+    evidence_rows = "".join(
+        "<tr>"
+        f"<td>{escape(item['label'])}</td>"
+        f"<td>{escape(str(item['value']))}</td>"
+        f"<td>{escape(item['source'])}</td>"
+        "</tr>"
+        for item in snapshot
+    )
+
+    scoring_rows = "".join(
+        "<tr>"
+        f"<td>{escape(str(rule['category']))}</td>"
+        f"<td>{escape(str(rule['label']))}</td>"
+        f"<td>{escape(str(rule['deduction']))}</td>"
+        f"<td>{escape(str(rule['evidence_ref']))}</td>"
+        "</tr>"
+        for rule in applied_rules
+    )
+
     backlog_rows = ""
-    for item in backlog:
+    for item in sorted_backlog(backlog):
         backlog_rows += (
             "<tr>"
             f"<td>{escape(str(item.get('priority', '')))}</td>"
@@ -31,7 +74,7 @@ def build_html(findings: dict) -> str:
             "</tr>"
         )
 
-    generated = datetime.utcnow().isoformat()
+    generated = generated_at()
 
     return f"""<!doctype html>
 <html lang=\"en\">
@@ -40,31 +83,86 @@ def build_html(findings: dict) -> str:
   <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
   <title>OSINT Posture Report</title>
   <style>
-    body {{ font-family: Arial, sans-serif; margin: 32px; color: #222; }}
-    h1, h2 {{ margin-bottom: 0.25rem; }}
-    .meta {{ color: #666; margin-bottom: 1.5rem; }}
-    .scores {{ display: flex; gap: 24px; margin-bottom: 1rem; }}
-    .score {{ padding: 12px 16px; border: 1px solid #ddd; border-radius: 8px; }}
-    table {{ width: 100%; border-collapse: collapse; margin-top: 0.5rem; }}
-    th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
-    th {{ background: #f7f7f7; }}
+    :root {{
+      color-scheme: light;
+      --ink: #172026;
+      --muted: #5f6b73;
+      --line: #d8dee3;
+      --panel: #f6f8f9;
+      --accent: #0f6b6e;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      font-family: Arial, sans-serif;
+      line-height: 1.45;
+      margin: 0;
+      color: var(--ink);
+      background: #fff;
+    }}
+    main {{ max-width: 1120px; margin: 0 auto; padding: 32px; }}
+    h1, h2 {{ margin: 0 0 0.45rem; }}
+    h1 {{ font-size: 2rem; }}
+    h2 {{ font-size: 1.25rem; padding-top: 1.2rem; border-top: 1px solid var(--line); }}
+    .meta {{ color: var(--muted); margin-bottom: 1.5rem; }}
+    .scores {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 1rem 0; }}
+    .score {{ padding: 14px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }}
+    .score span, .score em {{ display: block; color: var(--muted); font-style: normal; }}
+    .score strong {{ display: block; font-size: 2rem; color: var(--accent); margin: 0.2rem 0; }}
+    .pills {{ display: flex; flex-wrap: wrap; gap: 8px; margin: 0.75rem 0 1rem; }}
+    .pill {{ border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; color: var(--muted); }}
+    table {{ width: 100%; border-collapse: collapse; margin-top: 0.5rem; font-size: 0.95rem; }}
+    th, td {{ border: 1px solid var(--line); padding: 8px; text-align: left; vertical-align: top; }}
+    th {{ background: var(--panel); }}
+    ul {{ margin-top: 0.5rem; }}
+    @media print {{
+      main {{ max-width: none; padding: 0; }}
+      body {{ font-size: 11pt; }}
+      .score {{ break-inside: avoid; }}
+      table {{ break-inside: auto; }}
+      tr {{ break-inside: avoid; }}
+    }}
   </style>
 </head>
 <body>
+<main>
   <h1>OSINT Posture Report</h1>
   <div class=\"meta\">Generated: {escape(generated)}</div>
 
-  <h2>Scores</h2>
-  <div class=\"scores\">
-    <div class=\"score\"><strong>Email posture</strong><div>{escape(str(email_score))}</div></div>
-    <div class=\"score\"><strong>Exposure</strong><div>{escape(str(exposure_score))}</div></div>
-  </div>
+  <h2>Executive Overview</h2>
+  <div class=\"scores\">{score_cards}</div>
+  <div class=\"pills\">{count_pills}</div>
 
   <h2>Findings</h2>
-  <h3>Email notes</h3>
-  <ul>{li(email_notes)}</ul>
-  <h3>Exposure notes</h3>
-  <ul>{li(exposure_notes)}</ul>
+  <ul>{li(notes)}</ul>
+
+  <h2>Scoring Rationale</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Category</th>
+        <th>Rule</th>
+        <th>Deduction</th>
+        <th>Evidence Ref</th>
+      </tr>
+    </thead>
+    <tbody>
+      {scoring_rows or '<tr><td colspan="4">No scoring deductions were applied.</td></tr>'}
+    </tbody>
+  </table>
+
+  <h2>Evidence Snapshot</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Signal</th>
+        <th>Value</th>
+        <th>Source</th>
+      </tr>
+    </thead>
+    <tbody>
+      {evidence_rows}
+    </tbody>
+  </table>
 
   <h2>Prioritized Remediation Backlog</h2>
   <table>
@@ -82,5 +180,6 @@ def build_html(findings: dict) -> str:
       {backlog_rows or '<tr><td colspan="6">No prioritized items.</td></tr>'}
     </tbody>
   </table>
+</main>
 </body>
 </html>"""

@@ -133,7 +133,14 @@ async def run_pipeline(config: RunConfig) -> dict:
         modules.append(scope_result)
         _write_json(f"{raw_path}/scope_init.json", scope_result.data)
 
-        dns_result = _wrap_module("dns_mail_profile", dns_mail_profile.run, config.domain, config.mode, context.dns_client)
+        dns_result = _wrap_module(
+            "dns_mail_profile",
+            dns_mail_profile.run,
+            config.domain,
+            config.mode,
+            context.dns_client,
+            config.dns_policy,
+        )
         modules.append(dns_result)
         _write_json(f"{raw_path}/dns_mail_profile.json", dns_result.data)
 

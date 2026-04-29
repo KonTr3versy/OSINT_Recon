@@ -5,12 +5,14 @@ import logging
 import sys
 from datetime import datetime
 from pathlib import Path
-from uuid import uuid4
 
 import typer
 
-from .models.config import CacheMode, DnsPolicy, Mode, RunConfig
-from .pipeline.runner import run_pipeline_sync
+from .models.config import CacheMode, DnsPolicy, Mode
+from .pipeline.service import create_run_config, execute_run
+from .platform.cloudflare_bridge import CloudflareReconJob, execute_cloudflare_job
+from .platform.db import Database, seed_defaults
+from .platform.worker import process_next_run
 from .reporting.csv_backlog import build_csv
 from .reporting.html import build_html
 from .reporting.markdown import build_summary
@@ -76,9 +78,10 @@ def run(
     """Run a posture assessment for a domain."""
     setup_logging()
     resolved_mode = parse_mode_alias(mode)
-    config = RunConfig(
+    config = create_run_config(
         domain=domain,
         company=company,
+        out_dir=out,
         mode=resolved_mode,
         dns_policy=dns_policy,
         cache=cache,
@@ -92,11 +95,8 @@ def run(
         shodan_key=shodan_key,
         censys_id=censys_id,
         censys_secret=censys_secret,
-        out_dir=out,
-        run_id=str(uuid4()),
-        timestamp=datetime.utcnow(),
     )
-    result = run_pipeline_sync(config)
+    result = execute_run(config)
     typer.echo(json.dumps(result, indent=2, default=str))
 
 
@@ -141,3 +141,45 @@ def validate(input: str = typer.Option(..., "--input")) -> None:
         raise typer.Exit(1)
 
     typer.echo("valid")
+
+
+@app.command()
+def serve(
+    host: str = typer.Option("127.0.0.1", "--host"),
+    port: int = typer.Option(8000, "--port"),
+) -> None:
+    """Run the internal web API and dashboard."""
+    import uvicorn
+
+    from .platform.app import create_app
+
+    uvicorn.run(create_app(), host=host, port=port, reload=False)
+
+
+@app.command("worker-once")
+def worker_once(
+    database_url: str | None = typer.Option(None, "--database-url"),
+    out: str = typer.Option("./output", "--out"),
+) -> None:
+    """Process one queued platform run."""
+    database = Database(database_url)
+    database.create_all()
+    with database.session() as session:
+        seed_defaults(session)
+        run = process_next_run(session, out_dir=out)
+        if run is None:
+            typer.echo("no queued runs")
+        else:
+            typer.echo(f"processed run {run.id}: {run.status}")
+
+
+@app.command("cloudflare-job")
+def cloudflare_job(
+    input: str = typer.Option("-", "--input", help="Cloudflare queue job JSON file, or '-' for stdin."),
+    out: str = typer.Option("./output", "--out"),
+) -> None:
+    """Execute one Cloudflare recon job payload with the local Python pipeline."""
+    raw = sys.stdin.read() if input == "-" else Path(input).read_text(encoding="utf-8")
+    job = CloudflareReconJob.model_validate_json(raw)
+    result = execute_cloudflare_job(job, out_dir=out)
+    typer.echo(json.dumps(result, indent=2, default=str))
