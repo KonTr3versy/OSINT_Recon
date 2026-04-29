@@ -75,6 +75,34 @@ npm run db:migrate:remote
 npm run deploy
 ```
 
+Protect the deployed Worker with Cloudflare Access. After creating the Access application, set the audience tag in `wrangler.toml`:
+
+```toml
+[vars]
+ACCESS_REQUIRED = "true"
+CF_ACCESS_AUD = "<access-application-aud-tag>"
+```
+
+Set Worker secrets:
+
+```bash
+npx wrangler secret put CONTROL_PLANE_TOKEN
+```
+
+If you route model calls through AI Gateway, set:
+
+```toml
+[vars]
+AI_GATEWAY_URL = "https://gateway.ai.cloudflare.com/v1/<account-id>/<gateway-id>/workers-ai/@cf/meta/llama-3.1-8b-instruct"
+AI_MODEL = "@cf/meta/llama-3.1-8b-instruct"
+```
+
+If your Gateway endpoint requires a token:
+
+```bash
+npx wrangler secret put AI_GATEWAY_TOKEN
+```
+
 The internal Python worker should consume `ReconJobPayload` messages from the `osint-recon-jobs` queue and report results back to:
 
 ```text
@@ -103,6 +131,7 @@ Required Cloudflare setup:
 - Enable HTTP pull for `osint-recon-jobs`.
 - Create a Cloudflare API token with Account Queues read/write permissions for `CF_QUEUES_TOKEN`.
 - Create R2 S3 credentials with object read/write permissions for `CF_R2_ACCESS_KEY_ID` and `CF_R2_SECRET_ACCESS_KEY`.
+- Set `CF_CONTROL_PLANE_TOKEN` on the Python worker to the same value as the Worker `CONTROL_PLANE_TOKEN` secret.
 
 ## Safety Boundary
 

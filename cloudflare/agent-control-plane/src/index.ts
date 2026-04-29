@@ -1,4 +1,5 @@
 import { getAgentByName, routeAgentRequest, type AgentNamespace } from "agents";
+import { authenticateRequest, identityAuditPayload, type AccessIdentity } from "./auth";
 import { canQueuePlan, proposeReconPlan } from "./policy";
 import { ReconAgent } from "./recon-agent";
 import type { AssetRecord, DnsPolicy, Env, ReconMode, ReconPlanProposal } from "./types";
@@ -11,12 +12,20 @@ const jsonHeaders = {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+    const auth = authenticateRequest(request, env, {
+      allowAnonymous: url.pathname === "/",
+      serviceCallback: url.pathname.match(/^\/api\/jobs\/\d+\/result$/) !== null,
+    });
+    if (!auth.ok) {
+      return auth.response;
+    }
+
     const agentResponse = await routeAgentRequest(request, env);
     if (agentResponse) {
       return agentResponse;
     }
 
-    const url = new URL(request.url);
     if (url.pathname === "/") {
       return new Response(renderDashboard(), { headers: { "content-type": "text/html; charset=utf-8" } });
     }
@@ -24,26 +33,26 @@ export default {
       return listAssets(env, request);
     }
     if (request.method === "POST" && url.pathname === "/api/assets") {
-      return createAsset(env, request);
+      return createAsset(env, request, auth.identity);
     }
     if (request.method === "POST" && url.pathname === "/api/recon-plans") {
-      return createReconPlan(env, request);
+      return createReconPlan(env, request, auth.identity);
     }
     if (request.method === "POST" && url.pathname.match(/^\/api\/approvals\/\d+\/approve$/)) {
       const approvalId = Number(url.pathname.split("/")[3]);
-      return decideApproval(env, request, approvalId, "approved");
+      return decideApproval(env, request, auth.identity, approvalId, "approved");
     }
     if (request.method === "POST" && url.pathname.match(/^\/api\/approvals\/\d+\/reject$/)) {
       const approvalId = Number(url.pathname.split("/")[3]);
-      return decideApproval(env, request, approvalId, "rejected");
+      return decideApproval(env, request, auth.identity, approvalId, "rejected");
     }
     if (request.method === "POST" && url.pathname.match(/^\/api\/recon-plans\/\d+\/queue$/)) {
       const planId = Number(url.pathname.split("/")[3]);
-      return queuePlan(env, planId);
+      return queuePlan(env, auth.identity, planId);
     }
     if (request.method === "POST" && url.pathname.match(/^\/api\/jobs\/\d+\/result$/)) {
       const jobId = Number(url.pathname.split("/")[3]);
-      return recordJobResult(env, request, jobId);
+      return recordJobResult(env, request, auth.identity, jobId);
     }
     if (request.method === "POST" && url.pathname.match(/^\/api\/agents\/[^/]+\/schedule$/)) {
       const orgId = decodeURIComponent(url.pathname.split("/")[3]);
@@ -65,7 +74,7 @@ async function listAssets(env: Env, request: Request): Promise<Response> {
   return Response.json(result.results ?? [], { headers: jsonHeaders });
 }
 
-async function createAsset(env: Env, request: Request): Promise<Response> {
+async function createAsset(env: Env, request: Request, identity: AccessIdentity): Promise<Response> {
   const orgId = requireOrg(request);
   const body = (await request.json()) as {
     domain: string;
@@ -91,11 +100,11 @@ async function createAsset(env: Env, request: Request): Promise<Response> {
       body.defaultSchedule ?? "0 9 * * 1",
     )
     .first<AssetRecord>();
-  await audit(env, orgId, "asset.created", "asset", result?.id ?? null, body);
+  await audit(env, orgId, "asset.created", "asset", result?.id ?? null, withActor(identity, body));
   return Response.json(result, { status: 201, headers: jsonHeaders });
 }
 
-async function createReconPlan(env: Env, request: Request): Promise<Response> {
+async function createReconPlan(env: Env, request: Request, identity: AccessIdentity): Promise<Response> {
   const orgId = requireOrg(request);
   const body = (await request.json()) as {
     assetId: number;
@@ -117,7 +126,7 @@ async function createReconPlan(env: Env, request: Request): Promise<Response> {
     Boolean(body.enableThirdPartyIntel),
     body.budgets ?? {},
   );
-  const planId = await persistPlan(env, orgId, proposal);
+  const planId = await persistPlan(env, orgId, proposal, identity);
   if (proposal.requiresApproval) {
     await env.DB.prepare(
       "INSERT INTO approval_requests (org_id, recon_plan_id, status, reason) VALUES (?, ?, 'pending', ?)",
@@ -131,6 +140,7 @@ async function createReconPlan(env: Env, request: Request): Promise<Response> {
 async function decideApproval(
   env: Env,
   request: Request,
+  identity: AccessIdentity,
   approvalId: number,
   status: "approved" | "rejected",
 ): Promise<Response> {
@@ -154,11 +164,11 @@ async function decideApproval(
       approval.recon_plan_id,
     ),
   ]);
-  await audit(env, orgId, `approval.${status}`, "approval_request", approvalId, body);
+  await audit(env, orgId, `approval.${status}`, "approval_request", approvalId, withActor(identity, body));
   return Response.json({ id: approvalId, status }, { headers: jsonHeaders });
 }
 
-async function queuePlan(env: Env, planId: number): Promise<Response> {
+async function queuePlan(env: Env, identity: AccessIdentity, planId: number): Promise<Response> {
   const plan = await env.DB.prepare(
     `SELECT p.*, a.domain, a.company
      FROM recon_plans p
@@ -194,11 +204,16 @@ async function queuePlan(env: Env, planId: number): Promise<Response> {
   }
   const payload = { ...partialPayload, cloudflareJobId: inserted.id };
   await env.RECON_JOBS.send(payload);
-  await audit(env, partialPayload.orgId, "job.queued", "recon_job", inserted.id, payload);
+  await audit(env, partialPayload.orgId, "job.queued", "recon_job", inserted.id, withActor(identity, payload));
   return Response.json(payload, { status: 201, headers: jsonHeaders });
 }
 
-async function recordJobResult(env: Env, request: Request, jobId: number): Promise<Response> {
+async function recordJobResult(
+  env: Env,
+  request: Request,
+  identity: AccessIdentity,
+  jobId: number,
+): Promise<Response> {
   const orgId = requireOrg(request);
   const body = (await request.json()) as {
     status: string;
@@ -216,11 +231,16 @@ async function recordJobResult(env: Env, request: Request, jobId: number): Promi
   )
     .bind(body.artifactPrefix ?? null, JSON.stringify(body.summary ?? {}), body.agentSummary ?? null, jobId)
     .run();
-  await audit(env, orgId, "job.result_recorded", "recon_job", jobId, body);
+  await audit(env, orgId, "job.result_recorded", "recon_job", jobId, withActor(identity, body));
   return Response.json({ id: jobId, status: body.status }, { headers: jsonHeaders });
 }
 
-async function persistPlan(env: Env, orgId: string, proposal: ReconPlanProposal): Promise<number> {
+async function persistPlan(
+  env: Env,
+  orgId: string,
+  proposal: ReconPlanProposal,
+  identity: AccessIdentity,
+): Promise<number> {
   const inserted = await env.DB.prepare(
     `INSERT INTO recon_plans (
       org_id, asset_id, requested_mode, requested_dns_policy, enable_third_party_intel,
@@ -243,7 +263,7 @@ async function persistPlan(env: Env, orgId: string, proposal: ReconPlanProposal)
   if (!inserted) {
     throw new Error("Failed to create recon plan");
   }
-  await audit(env, orgId, "plan.proposed", "recon_plan", inserted.id, proposal);
+  await audit(env, orgId, "plan.proposed", "recon_plan", inserted.id, withActor(identity, proposal));
   return inserted.id;
 }
 
@@ -264,6 +284,13 @@ async function audit(
 
 function requireOrg(request: Request): string {
   return request.headers.get("X-Org-Id") ?? "default";
+}
+
+function withActor(identity: AccessIdentity, payload: unknown): Record<string, unknown> {
+  return {
+    actor: identityAuditPayload(identity),
+    payload,
+  };
 }
 
 function renderDashboard(): string {

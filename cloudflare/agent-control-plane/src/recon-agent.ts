@@ -1,4 +1,5 @@
 import { Agent } from "agents";
+import { runReconModel } from "./ai";
 import { proposeReconPlan } from "./policy";
 import type { AgentState, AssetRecord, Env, ReconJobPayload } from "./types";
 
@@ -50,8 +51,11 @@ export class ReconAgent extends Agent<Env, AgentState> {
       ...this.state.messages.map((item) => ({ role: item.role, content: item.content })),
       { role: "user", content: message },
     ];
-    const response = await this.env.AI.run("@cf/meta/llama-3.1-8b-instruct", { messages });
-    const content = String((response as { response?: string }).response ?? "");
+    const result = await runReconModel(this.env, messages, {
+      agent: "ReconAgent",
+      action: "chat",
+    });
+    const content = result.content;
     this.setState({
       ...this.state,
       messages: [
@@ -60,7 +64,12 @@ export class ReconAgent extends Agent<Env, AgentState> {
         { role: "assistant" as const, content, ts: new Date().toISOString() },
       ].slice(-40),
     });
-    return { response: content };
+    await this.audit("default", "agent.llm.response", "agent", null, {
+      model: result.model,
+      provider: result.provider,
+      gatewayUsed: result.gatewayUsed,
+    });
+    return { response: content, model: result.model, provider: result.provider, gatewayUsed: result.gatewayUsed };
   }
 
   private async loadAsset(assetId: number): Promise<AssetRecord | null> {

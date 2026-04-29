@@ -72,6 +72,7 @@ export CF_ACCOUNT_ID="<account-id>"
 export CF_QUEUE_ID="<queue-id>"
 export CF_QUEUES_TOKEN="<queues-read-write-token>"
 export CF_CONTROL_PLANE_URL="https://<worker-name>.<subdomain>.workers.dev"
+export CF_CONTROL_PLANE_TOKEN="<same-value-as-worker-secret>"
 export CF_R2_BUCKET="osint-recon-artifacts"
 export CF_R2_ACCESS_KEY_ID="<r2-access-key-id>"
 export CF_R2_SECRET_ACCESS_KEY="<r2-secret-access-key>"
@@ -114,6 +115,8 @@ Cloudflare control plane:
 - D1 stores assets, recon plans, approval requests, queued job metadata, run summaries, and audit events.
 - Cloudflare Queues hands approved recon jobs to the internal Python worker.
 - R2 is the intended storage layer for generated reports, CSV backlogs, raw ledgers, and manifests.
+- Cloudflare Access should protect deployed Worker routes. The Worker enforces Access headers by default and uses `CONTROL_PLANE_TOKEN` for Python result callbacks.
+- Workers AI is the default inference runtime. Set `AI_GATEWAY_URL` to route Agent model calls through Cloudflare AI Gateway.
 
 Python executor:
 - `osint-posture cloudflare-job` accepts the Cloudflare queue payload shape and executes the existing deterministic pipeline.
@@ -137,6 +140,7 @@ npx wrangler d1 create osint-recon-control-plane
 npx wrangler r2 bucket create osint-recon-artifacts
 npx wrangler queues create osint-recon-jobs
 npx wrangler queues consumer http add osint-recon-jobs
+npx wrangler secret put CONTROL_PLANE_TOKEN
 npm run db:migrate:remote
 npm run deploy
 ```

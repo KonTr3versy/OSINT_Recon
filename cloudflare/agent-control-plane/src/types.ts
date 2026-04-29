@@ -8,6 +8,12 @@ export interface Env {
   ARTIFACTS: R2Bucket;
   RECON_JOBS: Queue<ReconJobPayload>;
   OSINT_AGENT: DurableObjectNamespace;
+  ACCESS_REQUIRED?: string;
+  CF_ACCESS_AUD?: string;
+  CONTROL_PLANE_TOKEN?: string;
+  AI_MODEL?: string;
+  AI_GATEWAY_URL?: string;
+  AI_GATEWAY_TOKEN?: string;
 }
 
 export interface AssetRecord {

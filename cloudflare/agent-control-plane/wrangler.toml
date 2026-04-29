@@ -2,6 +2,14 @@ name = "osint-recon-agent-control-plane"
 main = "src/index.ts"
 compatibility_date = "2026-04-01"
 
+[vars]
+ACCESS_REQUIRED = "true"
+AI_MODEL = "@cf/meta/llama-3.1-8b-instruct"
+# Set after creating a Cloudflare Access application for this Worker.
+# CF_ACCESS_AUD = "replace-with-access-aud-tag"
+# Set to a full AI Gateway endpoint to route model calls through Gateway.
+# AI_GATEWAY_URL = "https://gateway.ai.cloudflare.com/v1/<account-id>/<gateway-id>/workers-ai/@cf/meta/llama-3.1-8b-instruct"
+
 [ai]
 binding = "AI"
 
