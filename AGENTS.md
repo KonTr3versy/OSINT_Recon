@@ -37,8 +37,8 @@ Python:
 
 ```bash
 PYTHONPATH=. uv run pytest
-PYTHONPATH=. uv run --with-editable . osint-posture run --domain example.com --out ./output
-PYTHONPATH=. uv run --with-editable . osint-posture cloudflare-worker --once --skip-r2 --out ./output
+uv run osint-posture run --domain example.com --out ./output
+uv run osint-posture cloudflare-worker --once --skip-r2 --out ./output
 ```
 
 Cloudflare:
@@ -63,6 +63,15 @@ npm run db:migrate:remote
 npm run deploy
 ```
 
+VPS executor:
+
+```bash
+./deploy/ubuntu/setup-executor.sh
+sudo bash -lc 'set -a; source /etc/osint-recon-worker.env; set +a; cd /opt/osint-recon; exec runuser -u osintrecon -- env HOME=/var/lib/osint-recon /usr/local/bin/uv run osint-posture cloudflare-worker --once --skip-r2 --out /var/lib/osint-recon/output'
+sudo systemctl status osint-recon-worker
+sudo journalctl -u osint-recon-worker -f
+```
+
 ## Required Secrets
 
 - `CONTROL_PLANE_TOKEN`: shared callback token for Python worker result posts.
@@ -75,6 +84,7 @@ npm run deploy
   - `CF_R2_BUCKET`
   - `CF_R2_ACCESS_KEY_ID`
   - `CF_R2_SECRET_ACCESS_KEY`
+  - `CF_CONTROL_PLANE_TOKEN`
 
 ## Change Rules
 

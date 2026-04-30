@@ -1,12 +1,13 @@
 name = "osint-recon-agent-control-plane"
 main = "src/index.ts"
 compatibility_date = "2026-04-01"
+compatibility_flags = ["nodejs_compat"]
 
 [vars]
 ACCESS_REQUIRED = "true"
-AI_MODEL = "@cf/meta/llama-3.1-8b-instruct"
+AI_MODEL = "@cf/meta/llama-3-8b-instruct"
 # Set after creating a Cloudflare Access application for this Worker.
-# CF_ACCESS_AUD = "replace-with-access-aud-tag"
+CF_ACCESS_AUD = "43515c157186387a0431fd82d8bdd36ef43a7ba198fc699f8e4bc9c1dcf03cfb"
 # Set to a full AI Gateway endpoint to route model calls through Gateway.
 # AI_GATEWAY_URL = "https://gateway.ai.cloudflare.com/v1/<account-id>/<gateway-id>/workers-ai/@cf/meta/llama-3.1-8b-instruct"
 
@@ -20,12 +21,12 @@ bindings = [
 
 [[migrations]]
 tag = "v1"
-new_classes = ["ReconAgent"]
+new_sqlite_classes = ["ReconAgent"]
 
 [[d1_databases]]
 binding = "DB"
 database_name = "osint-recon-control-plane"
-database_id = "replace-with-d1-database-id"
+database_id = "7c074676-98ad-4b1f-93d2-1cf9436a3c5e"
 
 [[r2_buckets]]
 binding = "ARTIFACTS"

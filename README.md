@@ -9,9 +9,8 @@ Requirements: Python 3.11+
 Using `uv`:
 
 ```bash
-uv venv
-source .venv/bin/activate
-uv pip install -e .
+uv sync
+uv run osint-posture --help
 ```
 
 ## How to run
@@ -86,6 +85,18 @@ For a one-shot local smoke test:
 osint-posture cloudflare-worker --once --skip-r2 --out ./output
 ```
 
+Deploy the private Ubuntu VPS executor:
+
+```bash
+./deploy/ubuntu/setup-executor.sh
+sudo nano /etc/osint-recon-worker.env
+sudo cp /opt/osint-recon/deploy/systemd/osint-recon-worker.service /etc/systemd/system/osint-recon-worker.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now osint-recon-worker
+```
+
+See `deploy/VPS_EXECUTOR.md` for the full queue, R2, systemd, and rollback runbook.
+
 Reports generated:
 - `artifacts/summary.md`
 - `artifacts/remediation_backlog.csv`
@@ -144,6 +155,23 @@ npx wrangler secret put CONTROL_PLANE_TOKEN
 npm run db:migrate:remote
 npm run deploy
 ```
+
+Production-like smoke test:
+- Open the deployed Worker dashboard, enter a domain and organization name, and click `Start passive recon`.
+- Run the one-shot command from `deploy/VPS_EXECUTOR.md` with `--skip-r2` to verify queue pull and callback.
+- Queue another job and run without `--skip-r2` to verify R2 artifact upload under `runs/`.
+- Enable `osint-recon-worker.service` and verify it survives `systemctl restart osint-recon-worker`.
+
+One-click Cloudflare API:
+
+```bash
+curl -X POST https://<worker-host>/api/recon/start \
+  -H "content-type: application/json" \
+  -H "X-Org-Id: default" \
+  -d '{"domain":"example.com","company":"Example"}'
+```
+
+The endpoint creates or reuses the asset, creates a passive/minimal approved plan, queues the job, and returns the asset, plan, and Cloudflare job id.
 
 The local FastAPI platform also wraps the deterministic recon pipeline in an approval-gated web control plane for internal development and fallback deployments.
 

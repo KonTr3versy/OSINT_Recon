@@ -1,0 +1,23 @@
+[Unit]
+Description=OSINT Recon Cloudflare Queue Worker
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=osintrecon
+Group=osintrecon
+WorkingDirectory=/opt/osint-recon
+Environment=HOME=/var/lib/osint-recon
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+EnvironmentFile=/etc/osint-recon-worker.env
+ExecStart=/usr/local/bin/uv run osint-posture cloudflare-worker --out /var/lib/osint-recon/output
+Restart=always
+RestartSec=15
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=read-only
+ReadWritePaths=/var/lib/osint-recon /opt/osint-recon
+
+[Install]
+WantedBy=multi-user.target
