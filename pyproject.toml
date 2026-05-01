@@ -19,6 +19,14 @@ dependencies = [
 [project.scripts]
 osint-posture = "osint_posture.cli:app"
 
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["osint_posture*"]
+exclude = ["cloudflare*", "tests*"]
+
 [tool.pytest.ini_options]
 addopts = "-q"
 testpaths = ["tests"]

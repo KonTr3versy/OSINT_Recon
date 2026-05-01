@@ -21,6 +21,15 @@ The Worker runs locally at `http://localhost:8787`.
 
 ## First Calls
 
+Start one-click passive recon:
+
+```bash
+curl -X POST http://localhost:8787/api/recon/start \
+  -H 'content-type: application/json' \
+  -H 'X-Org-Id: default' \
+  -d '{"domain":"example.com","company":"Example"}'
+```
+
 Create an asset:
 
 ```bash
@@ -126,6 +135,12 @@ osint-posture cloudflare-worker --out ./output
 ```
 
 Use `--once` to process a single batch and exit. Use `--skip-r2` for local smoke tests where you want to verify queue pull, recon execution, and result callbacks without uploading artifacts.
+
+For the production-like Ubuntu executor, use the checked-in runbook at `../../deploy/VPS_EXECUTOR.md`. The service unit runs:
+
+```bash
+uv run osint-posture cloudflare-worker --out /var/lib/osint-recon/output
+```
 
 Required Cloudflare setup:
 - Enable HTTP pull for `osint-recon-jobs`.

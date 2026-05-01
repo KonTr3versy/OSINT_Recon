@@ -7,3 +7,4 @@ build/
 osint_platform.db
 node_modules/
 .wrangler/
+.env*.local

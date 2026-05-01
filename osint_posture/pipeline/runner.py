@@ -162,6 +162,13 @@ async def run_pipeline(config: RunConfig) -> dict:
         modules.append(third_party_result)
         _write_json(f"{raw_path}/third_party_intel.json", third_party_result.data)
 
+        passive_users_result = await _wrap_module_async(
+            "passive_users",
+            passive_users.run(config.domain, config.company, context.http_client),
+        )
+        modules.append(passive_users_result)
+        _write_json(f"{raw_path}/passive_users.json", passive_users_result.data)
+
         web_result = await _wrap_module_async(
             "web_signals",
             web_signals.run(config.domain, subdomains_result.data.get("subdomains", []), config.mode.value, context.http_client, config.max_pages),
