@@ -5,7 +5,7 @@ import json
 from dataclasses import dataclass
 
 from osint_posture.platform.cloudflare_queue import decode_queue_body, decode_queue_message
-from osint_posture.platform.cloudflare_worker import CloudflareReconWorker
+from osint_posture.platform.cloudflare_worker import CloudflareControlPlaneClient, CloudflareReconWorker
 
 
 def _job_payload():
@@ -87,6 +87,32 @@ def test_worker_posts_failed_result_when_processing_fails(monkeypatch):
     assert control_plane.results[0]["error"] == "boom"
 
 
+def test_control_plane_client_sends_access_service_token_headers(monkeypatch):
+    captured = {}
+
+    class FakeClient:
+        def post(self, url, *, headers, json):
+            captured["url"] = url
+            captured["headers"] = headers
+            captured["json"] = json
+            return _FakeResponse()
+
+    client = CloudflareControlPlaneClient(
+        base_url="https://worker.example",
+        api_token="callback-token",
+        access_client_id="service-id",
+        access_client_secret="service-secret",
+    )
+    client.client = FakeClient()
+
+    client.post_job_result(12, {"status": "completed"})
+
+    assert captured["url"] == "https://worker.example/api/jobs/12/result"
+    assert captured["headers"]["authorization"] == "Bearer callback-token"
+    assert captured["headers"]["cf-access-client-id"] == "service-id"
+    assert captured["headers"]["cf-access-client-secret"] == "service-secret"
+
+
 class _FakeQueue:
     def __init__(self):
         self.acked = []
@@ -107,6 +133,11 @@ class _FakeControlPlane:
 
     def post_job_result(self, job_id, payload):
         self.results.append(payload)
+
+
+class _FakeResponse:
+    status_code = 200
+    text = "ok"
 
 
 @dataclass(frozen=True)

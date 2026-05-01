@@ -197,6 +197,8 @@ def cloudflare_worker(
     callback_url: str | None = typer.Option(None, "--callback-url", envvar="CF_CONTROL_PLANE_URL"),
     org_id: str = typer.Option("default", "--org-id", envvar="CF_ORG_ID"),
     control_plane_token: str | None = typer.Option(None, "--control-plane-token", envvar="CF_CONTROL_PLANE_TOKEN"),
+    access_client_id: str | None = typer.Option(None, "--access-client-id", envvar="CF_ACCESS_CLIENT_ID"),
+    access_client_secret: str | None = typer.Option(None, "--access-client-secret", envvar="CF_ACCESS_CLIENT_SECRET"),
     r2_bucket: str | None = typer.Option(None, "--r2-bucket", envvar="CF_R2_BUCKET"),
     r2_endpoint: str | None = typer.Option(None, "--r2-endpoint", envvar="CF_R2_ENDPOINT"),
     r2_access_key_id: str | None = typer.Option(None, "--r2-access-key-id", envvar="CF_R2_ACCESS_KEY_ID"),
@@ -251,6 +253,8 @@ def cloudflare_worker(
         base_url=callback_url,
         org_id=org_id,
         api_token=control_plane_token,
+        access_client_id=access_client_id,
+        access_client_secret=access_client_secret,
     )
     r2 = None
     if not skip_r2:

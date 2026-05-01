@@ -29,11 +29,15 @@ class CloudflareControlPlaneClient:
         base_url: str,
         org_id: str = "default",
         api_token: str | None = None,
+        access_client_id: str | None = None,
+        access_client_secret: str | None = None,
         timeout_seconds: float = 30.0,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.org_id = org_id
         self.api_token = api_token
+        self.access_client_id = access_client_id
+        self.access_client_secret = access_client_secret
         self.client = httpx.Client(timeout=timeout_seconds)
 
     def close(self) -> None:
@@ -46,6 +50,9 @@ class CloudflareControlPlaneClient:
         }
         if self.api_token:
             headers["authorization"] = f"Bearer {self.api_token}"
+        if self.access_client_id and self.access_client_secret:
+            headers["cf-access-client-id"] = self.access_client_id
+            headers["cf-access-client-secret"] = self.access_client_secret
         response = self.client.post(
             f"{self.base_url}/api/jobs/{job_id}/result",
             headers=headers,
