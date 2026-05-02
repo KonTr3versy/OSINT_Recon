@@ -2,7 +2,7 @@
 set -euo pipefail
 
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
-GO_BIN="${GO_BIN:-/usr/local/bin/go}"
+GO_BIN="${GO_BIN:-}"
 
 if [ "${EUID:-$(id -u)}" -ne 0 ]; then
   echo "Run as root: sudo $0" >&2
@@ -18,6 +18,16 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y \
   git \
   golang-go \
   jq
+
+if [ -z "$GO_BIN" ]; then
+  GO_BIN="$(command -v go || true)"
+fi
+if [ -z "$GO_BIN" ] || [ ! -x "$GO_BIN" ]; then
+  echo "ERROR: go is not installed or not executable after apt install" >&2
+  echo "Try: sudo apt-get install -y golang-go" >&2
+  exit 1
+fi
+echo "Using Go: $GO_BIN ($("$GO_BIN" version))"
 
 mkdir -p "$INSTALL_DIR"
 
