@@ -3,6 +3,7 @@ set -euo pipefail
 
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 GO_BIN="${GO_BIN:-}"
+INSTALL_AMASS="${INSTALL_AMASS:-0}"
 
 if [ "${EUID:-$(id -u)}" -ne 0 ]; then
   echo "Run as root: sudo $0" >&2
@@ -28,6 +29,7 @@ if [ -z "$GO_BIN" ] || [ ! -x "$GO_BIN" ]; then
   exit 1
 fi
 echo "Using Go: $GO_BIN ($("$GO_BIN" version))"
+export GOMAXPROCS="${GOMAXPROCS:-1}"
 
 mkdir -p "$INSTALL_DIR"
 
@@ -50,14 +52,16 @@ echo "[2/5] Installing subfinder passive adapter"
 install_go_tool subfinder github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
 
 echo "[3/5] Installing amass passive adapter"
-if ! install_go_tool amass github.com/owasp-amass/amass/v5/cmd/amass@latest; then
-  echo "amass v5 install failed; trying amass v4"
-  if ! install_go_tool amass github.com/owasp-amass/amass/v4/.../amass@latest; then
-    echo "Go install for amass failed; trying apt package if available"
+if [ "$INSTALL_AMASS" = "1" ]; then
+  if ! install_go_tool amass github.com/owasp-amass/amass/v5/cmd/amass@latest; then
+    echo "amass v5 install failed; trying apt package if available"
     if ! DEBIAN_FRONTEND=noninteractive apt-get install -y amass; then
       echo "WARNING: amass could not be installed. The executor will skip the amass adapter." >&2
     fi
   fi
+else
+  echo "Skipping amass by default because compiling it can exceed small VPS memory."
+  echo "To opt in later, rerun with: sudo INSTALL_AMASS=1 $0"
 fi
 
 echo "[4/5] Verifying tools"
