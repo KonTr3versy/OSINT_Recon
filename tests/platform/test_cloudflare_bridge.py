@@ -33,11 +33,16 @@ def test_execute_cloudflare_job_returns_worker_result(tmp_path, monkeypatch):
         json.dumps({"totals": {"counts": {"target_http": 0}}}),
         encoding="utf-8",
     )
+    (run_path / "findings.json").write_text(
+        json.dumps({"prioritized_backlog": [{"title": "Enforce DMARC"}]}),
+        encoding="utf-8",
+    )
 
     def fake_execute_run(config):
         return {
             "run_path": str(run_path),
             "synthesis": {"summary": {"email_posture_score": 100, "exposure_score": 95}},
+            "modules": [{"module": "dns_mail_profile", "status": "ok", "warnings": [], "errors": []}],
         }
 
     monkeypatch.setattr("osint_posture.platform.cloudflare_bridge.execute_run", fake_execute_run)
@@ -61,4 +66,5 @@ def test_execute_cloudflare_job_returns_worker_result(tmp_path, monkeypatch):
     assert result["status"] == "completed"
     assert result["artifactPrefix"] == "example.com/20260101_000000"
     assert result["ledgerTotals"]["counts"]["target_http"] == 0
-
+    assert result["findings"]["prioritized_backlog"][0]["title"] == "Enforce DMARC"
+    assert result["moduleStatuses"][0]["module"] == "dns_mail_profile"

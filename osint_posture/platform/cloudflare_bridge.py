@@ -37,6 +37,15 @@ def execute_cloudflare_job(job: CloudflareReconJob, *, out_dir: str = "./output"
     )
     result = execute_run(config)
     artifacts = load_run_artifacts(result["run_path"])
+    module_statuses = [
+        {
+            "module": module.get("module"),
+            "status": module.get("status"),
+            "warnings": module.get("warnings", []),
+            "errors": module.get("errors", []),
+        }
+        for module in result.get("modules", [])
+    ]
     summary = result.get("synthesis", {}).get("summary", {})
     ledger = artifacts.get("network_ledger", {})
     artifact_prefix = _artifact_prefix(result["run_path"], out_dir)
@@ -49,6 +58,8 @@ def execute_cloudflare_job(job: CloudflareReconJob, *, out_dir: str = "./output"
         "runPath": result["run_path"],
         "artifactPrefix": artifact_prefix,
         "summary": summary,
+        "findings": artifacts.get("findings", {}),
+        "moduleStatuses": module_statuses,
         "ledgerTotals": ledger.get("totals", {}) if isinstance(ledger, dict) else {},
     }
 
@@ -60,4 +71,3 @@ def _artifact_prefix(run_path: str, out_dir: str) -> str:
         return path.relative_to(root).as_posix()
     except ValueError:
         return path.name
-

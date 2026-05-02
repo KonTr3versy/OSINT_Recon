@@ -175,6 +175,11 @@ curl -X POST https://<worker-host>/api/recon/start \
 
 The endpoint creates or reuses the asset, creates a passive/minimal approved plan, queues the job, and returns the asset, plan, and Cloudflare job id.
 
+MVP+ dashboard/API additions:
+- Completed jobs show score badges, labeled ledger totals, SOC analyst notes, and artifact links.
+- Artifact links are served through the Access-protected Worker with `GET /api/jobs/{id}/artifacts/{artifactIndex}`.
+- `POST /api/jobs/{id}/rerun` queues a new passive/minimal run for the same asset.
+
 The local FastAPI platform also wraps the deterministic recon pipeline in an approval-gated web control plane for internal development and fallback deployments.
 
 V1 capabilities:

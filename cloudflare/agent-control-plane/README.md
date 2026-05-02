@@ -30,6 +30,14 @@ curl -X POST http://localhost:8787/api/recon/start \
   -d '{"domain":"example.com","company":"Example"}'
 ```
 
+List jobs and fetch a recorded artifact through the Access-protected Worker:
+
+```bash
+curl http://localhost:8787/api/jobs -H 'X-Org-Id: default'
+curl http://localhost:8787/api/jobs/1/artifacts/0 -H 'X-Org-Id: default'
+curl -X POST http://localhost:8787/api/jobs/1/rerun -H 'X-Org-Id: default'
+```
+
 Create an asset:
 
 ```bash

@@ -53,6 +53,14 @@ export default {
       const jobId = Number(url.pathname.split("/")[3]);
       return getJobArtifacts(env, request, jobId);
     }
+    if (request.method === "GET" && url.pathname.match(/^\/api\/jobs\/\d+\/artifacts\/\d+$/)) {
+      const parts = url.pathname.split("/");
+      return streamJobArtifact(env, request, Number(parts[3]), Number(parts[5]));
+    }
+    if (request.method === "POST" && url.pathname.match(/^\/api\/jobs\/\d+\/rerun$/)) {
+      const jobId = Number(url.pathname.split("/")[3]);
+      return rerunJob(env, request, auth.identity, jobId);
+    }
     if (request.method === "POST" && url.pathname.match(/^\/api\/approvals\/\d+\/approve$/)) {
       const approvalId = Number(url.pathname.split("/")[3]);
       return decideApproval(env, request, auth.identity, approvalId, "approved");
@@ -344,6 +352,55 @@ async function getJobArtifacts(env: Env, request: Request, jobId: number): Promi
   );
 }
 
+async function streamJobArtifact(env: Env, request: Request, jobId: number, artifactIndex: number): Promise<Response> {
+  const orgId = requireOrg(request);
+  const row = await env.DB.prepare("SELECT result_json FROM recon_jobs WHERE org_id = ? AND id = ?")
+    .bind(orgId, jobId)
+    .first<{ result_json: string | null }>();
+  if (!row) {
+    return Response.json({ error: "job_not_found" }, { status: 404 });
+  }
+  const result = parseJsonRecord(row.result_json);
+  const artifacts = Array.isArray(result.artifacts) ? result.artifacts : [];
+  const artifact = artifacts[artifactIndex];
+  if (!isArtifactRecord(artifact)) {
+    return Response.json({ error: "artifact_not_found" }, { status: 404 });
+  }
+  const object = await env.ARTIFACTS.get(artifact.key);
+  if (!object) {
+    return Response.json({ error: "artifact_object_not_found" }, { status: 404 });
+  }
+  const headers = new Headers();
+  headers.set("content-type", artifact.contentType || object.httpMetadata?.contentType || "application/octet-stream");
+  headers.set("cache-control", "private, max-age=60");
+  headers.set("content-disposition", `inline; filename="${artifact.key.split("/").pop() || "artifact"}"`);
+  return new Response(object.body, { headers });
+}
+
+async function rerunJob(env: Env, request: Request, identity: AccessIdentity, jobId: number): Promise<Response> {
+  const orgId = requireOrg(request);
+  const row = await env.DB.prepare(
+    `SELECT j.asset_id, a.*
+     FROM recon_jobs j
+     JOIN assets a ON a.id = j.asset_id
+     WHERE j.org_id = ? AND j.id = ?`,
+  )
+    .bind(orgId, jobId)
+    .first<AssetRecord>();
+  if (!row) {
+    return Response.json({ error: "job_not_found" }, { status: 404 });
+  }
+  const proposal = proposeReconPlan(row, "passive", "minimal", false, {});
+  const planId = await persistPlan(env, orgId, proposal, identity);
+  const job = await enqueuePlan(env, identity, planId);
+  await audit(env, orgId, "job.rerun_queued", "recon_job", job.cloudflareJobId, withActor(identity, {
+    sourceJobId: jobId,
+    assetId: row.id,
+    planId,
+  }));
+  return Response.json({ sourceJobId: jobId, plan: { id: planId, ...proposal }, job }, { status: 201, headers: jsonHeaders });
+}
+
 async function recordJobResult(
   env: Env,
   request: Request,
@@ -357,8 +414,16 @@ async function recordJobResult(
     artifacts?: unknown[];
     ledgerTotals?: unknown;
     summary?: unknown;
+    findings?: unknown;
+    moduleStatuses?: unknown[];
     agentSummary?: string;
   };
+  const existingJob = await env.DB.prepare("SELECT id FROM recon_jobs WHERE org_id = ? AND id = ?")
+    .bind(orgId, jobId)
+    .first<{ id: number }>();
+  if (!existingJob) {
+    return Response.json({ error: "job_not_found" }, { status: 404 });
+  }
   const analysis = await summarizeJobResult(env, orgId, jobId, body);
   const storedBody = {
     ...body,
@@ -378,6 +443,8 @@ async function recordJobResult(
       body.artifactPrefix ?? null,
       JSON.stringify({
         summary: body.summary ?? {},
+        findings: body.findings ?? {},
+        moduleStatuses: body.moduleStatuses ?? [],
         ledgerTotals: body.ledgerTotals ?? {},
         artifacts: body.artifacts ?? [],
       }),
@@ -390,6 +457,10 @@ async function recordJobResult(
   }
   await audit(env, orgId, "job.result_recorded", "recon_job", jobId, withActor(identity, storedBody));
   return Response.json({ id: jobId, status: body.status }, { headers: jsonHeaders });
+}
+
+function isArtifactRecord(value: unknown): value is { key: string; contentType?: string } {
+  return typeof value === "object" && value !== null && "key" in value && typeof (value as { key?: unknown }).key === "string";
 }
 
 async function persistPlan(
@@ -467,7 +538,7 @@ function renderDashboard(): string {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>OSINT Recon Agent Control Plane</title>
   <style>
-    :root { color-scheme: light; --ink: #172026; --muted: #5c6975; --line: #d8dee4; --panel: #f6f8f9; --accent: #0f766e; --danger: #9f1239; }
+    :root { color-scheme: light; --ink: #172026; --muted: #5c6975; --line: #d8dee4; --panel: #f6f8f9; --accent: #0f766e; --danger: #9f1239; --good: #15803d; --warn: #a16207; }
     * { box-sizing: border-box; }
     body { font-family: Arial, sans-serif; margin: 0; color: var(--ink); background: #fff; }
     main { max-width: 1120px; margin: 0 auto; padding: 32px; }
@@ -490,9 +561,17 @@ function renderDashboard(): string {
     .job header { display: flex; justify-content: space-between; gap: 12px; align-items: start; }
     .badge { display: inline-block; padding: 3px 8px; border-radius: 999px; background: var(--panel); font-size: 13px; }
     .badge.completed { background: #dcfce7; color: #14532d; }
+    .badge.queued { background: #fef9c3; color: #713f12; }
     .badge.failed { background: #ffe4e6; color: var(--danger); }
+    .score-row, .ledger-row, .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .score-card, .ledger-card { border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; background: #fff; min-width: 140px; }
+    .score-card strong, .ledger-card strong { display: block; font-size: 18px; color: var(--ink); }
+    .score-card span, .ledger-card span { display: block; color: var(--muted); font-size: 12px; }
     .meta { color: var(--muted); font-size: 14px; margin-top: 4px; }
-    pre { min-height: 90px; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--panel); padding: 14px; }
+    details { margin-top: 12px; }
+    summary { cursor: pointer; color: var(--ink); font-weight: 700; }
+    pre { max-height: 360px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--panel); padding: 14px; }
+    a { color: #0f5f99; }
     ul { padding-left: 20px; }
     @media (max-width: 820px) { main { padding: 22px; } .grid { grid-template-columns: 1fr; } h1 { font-size: 32px; } }
   </style>
@@ -540,7 +619,25 @@ function renderDashboard(): string {
     }
 
     function statusClass(status) {
-      return "badge " + (status === "completed" || status === "failed" ? status : "");
+      return "badge " + (status === "completed" || status === "failed" || status === "queued" ? status : "");
+    }
+
+    function scoreBand(score) {
+      if (typeof score !== "number") return "not available";
+      if (score >= 90) return "strong";
+      if (score >= 70) return "review";
+      return "needs attention";
+    }
+
+    function addCard(container, label, value, note) {
+      const card = document.createElement("div");
+      card.className = label.includes("score") ? "score-card" : "ledger-card";
+      const strong = document.createElement("strong");
+      strong.textContent = value;
+      const span = document.createElement("span");
+      span.textContent = note || label;
+      card.append(strong, span);
+      container.append(card);
     }
 
     function renderJob(job) {
@@ -562,33 +659,56 @@ function renderDashboard(): string {
 
       if (job.summary && Object.keys(job.summary).length) {
         const scores = document.createElement("div");
-        scores.className = "meta";
-        scores.textContent = "Email score: " + (job.summary.email_posture_score ?? "n/a") + " · Exposure score: " + (job.summary.exposure_score ?? "n/a");
+        scores.className = "score-row";
+        const emailScore = job.summary.email_posture_score;
+        const exposureScore = job.summary.exposure_score;
+        addCard(scores, "email score", emailScore ?? "n/a", "Email score, higher is better · " + scoreBand(emailScore));
+        addCard(scores, "exposure score", exposureScore ?? "n/a", "Exposure score, higher is better · " + scoreBand(exposureScore));
         article.append(scores);
       }
 
       if (job.ledgerTotals && Object.keys(job.ledgerTotals).length) {
         const ledger = document.createElement("div");
-        ledger.className = "meta";
+        ledger.className = "ledger-row";
         const counts = job.ledgerTotals.counts || {};
-        ledger.textContent = "Ledger: target_http=" + (counts.target_http || 0) + ", target_dns=" + (counts.target_dns || 0) + ", third_party_http=" + (counts.third_party_http || 0);
+        addCard(ledger, "Target HTTP", counts.target_http || 0, "Target HTTP requests");
+        addCard(ledger, "Target DNS", counts.target_dns || 0, "Target DNS queries");
+        addCard(ledger, "Third-party source calls", counts.third_party_http || 0, "Passive source HTTP calls");
         article.append(ledger);
       }
 
       if (job.agentSummary) {
+        const details = document.createElement("details");
+        details.open = job.status === "completed";
+        const label = document.createElement("summary");
+        label.textContent = "SOC analyst notes";
         const summary = document.createElement("pre");
         summary.textContent = job.agentSummary;
-        article.append(summary);
+        details.append(label, summary);
+        article.append(details);
       }
 
       if (Array.isArray(job.artifacts) && job.artifacts.length) {
+        const details = document.createElement("details");
+        const label = document.createElement("summary");
+        label.textContent = "Artifacts (" + job.artifacts.length + ")";
         const list = document.createElement("ul");
-        for (const artifact of job.artifacts) {
+        job.artifacts.forEach((artifact, index) => {
           const item = document.createElement("li");
-          item.textContent = artifact.key || JSON.stringify(artifact);
+          if (artifact.key) {
+            const link = document.createElement("a");
+            link.href = "/api/jobs/" + job.id + "/artifacts/" + index;
+            link.target = "_blank";
+            link.rel = "noopener noreferrer";
+            link.textContent = artifact.key;
+            item.append(link);
+          } else {
+            item.textContent = JSON.stringify(artifact);
+          }
           list.append(item);
-        }
-        article.append(list);
+        });
+        details.append(label, list);
+        article.append(details);
       }
 
       if (job.error) {
@@ -597,6 +717,30 @@ function renderDashboard(): string {
         error.textContent = "Error: " + job.error;
         article.append(error);
       }
+      const actions = document.createElement("div");
+      actions.className = "actions";
+      const rerun = document.createElement("button");
+      rerun.className = "secondary";
+      rerun.type = "button";
+      rerun.textContent = "Run again";
+      rerun.addEventListener("click", async () => {
+        rerun.disabled = true;
+        rerun.textContent = "Queueing...";
+        try {
+          const response = await fetch("/api/jobs/" + job.id + "/rerun", { method: "POST", headers: orgHeaders });
+          const payload = await response.json();
+          if (!response.ok) throw new Error(payload.error || "rerun_failed");
+          await loadJobs();
+        } catch (error) {
+          rerun.textContent = "Failed";
+          alert("Run again failed: " + (error.message || String(error)));
+        } finally {
+          rerun.disabled = false;
+          rerun.textContent = "Run again";
+        }
+      });
+      actions.append(rerun);
+      article.append(actions);
       return article;
     }
 
