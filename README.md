@@ -91,6 +91,7 @@ Deploy the private Ubuntu VPS executor:
 
 ```bash
 ./deploy/ubuntu/setup-executor.sh
+sudo /opt/osint-recon/deploy/ubuntu/install-recon-tools.sh
 sudo nano /etc/osint-recon-worker.env
 sudo cp /opt/osint-recon/deploy/systemd/osint-recon-worker.service /etc/systemd/system/osint-recon-worker.service
 sudo systemctl daemon-reload

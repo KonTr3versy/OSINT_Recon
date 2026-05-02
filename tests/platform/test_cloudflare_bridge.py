@@ -16,12 +16,14 @@ def test_cloudflare_job_payload_accepts_worker_shape():
             "mode": "passive",
             "dnsPolicy": "minimal",
             "enableThirdPartyIntel": False,
+            "reconLevel": "low-noise-verified-surface",
             "budgets": {"max_target_dns_queries": 9},
         }
     )
 
     assert job.cloudflare_job_id == 7
     assert job.dns_policy == "minimal"
+    assert job.recon_level == "low-noise-verified-surface"
     assert job.budgets["max_target_dns_queries"] == 9
 
 
@@ -34,7 +36,14 @@ def test_execute_cloudflare_job_returns_worker_result(tmp_path, monkeypatch):
         encoding="utf-8",
     )
     (run_path / "findings.json").write_text(
-        json.dumps({"prioritized_backlog": [{"title": "Enforce DMARC"}]}),
+        json.dumps({
+            "prioritized_backlog": [{"title": "Enforce DMARC"}],
+            "evidence": {
+                "verified_surface": {"hosts": [{"host": "login.example.com"}]},
+                "well_known_metadata": {"checks": [{"url": "https://example.com/security.txt"}]},
+                "technology_fingerprints": {"hints": [{"technology": "Microsoft 365"}]},
+            },
+        }),
         encoding="utf-8",
     )
 
@@ -56,6 +65,7 @@ def test_execute_cloudflare_job_returns_worker_result(tmp_path, monkeypatch):
             "mode": "passive",
             "dnsPolicy": "minimal",
             "enableThirdPartyIntel": False,
+            "reconLevel": "low-noise-verified-surface",
             "budgets": {},
         }
     )
@@ -64,7 +74,11 @@ def test_execute_cloudflare_job_returns_worker_result(tmp_path, monkeypatch):
 
     assert result["cloudflareJobId"] == 7
     assert result["status"] == "completed"
+    assert result["reconLevel"] == "low-noise-verified-surface"
     assert result["artifactPrefix"] == "example.com/20260101_000000"
     assert result["ledgerTotals"]["counts"]["target_http"] == 0
     assert result["findings"]["prioritized_backlog"][0]["title"] == "Enforce DMARC"
     assert result["moduleStatuses"][0]["module"] == "dns_mail_profile"
+    assert result["verifiedSurface"]["hosts"][0]["host"] == "login.example.com"
+    assert result["wellKnownMetadata"]["checks"][0]["url"] == "https://example.com/security.txt"
+    assert result["technologyFingerprints"]["hints"][0]["technology"] == "Microsoft 365"

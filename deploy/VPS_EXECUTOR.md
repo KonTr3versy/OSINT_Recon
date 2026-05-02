@@ -49,7 +49,17 @@ sudo chown root:root /etc/osint-recon-worker.env
 sudo chmod 600 /etc/osint-recon-worker.env
 ```
 
-## 3. Smoke Test Queue and Callback
+## 3. Install Optional Recon Tools
+
+The `low-noise-verified-surface` tier can use optional passive adapters for `subfinder` and `amass`. Install or refresh those tools with:
+
+```bash
+sudo /opt/osint-recon/deploy/ubuntu/install-recon-tools.sh
+```
+
+If `amass` cannot be installed, the executor still runs and records the adapter as skipped. `subfinder` should be present for the best passive subdomain enrichment.
+
+## 4. Smoke Test Queue and Callback
 
 Queue a passive/minimal plan from the Worker dashboard console, then run:
 
@@ -73,7 +83,7 @@ Expected result:
 }
 ```
 
-## 4. Smoke Test R2 Upload
+## 5. Smoke Test R2 Upload
 
 Queue another passive/minimal plan, then run without `--skip-r2`:
 
@@ -89,7 +99,7 @@ sudo bash -lc '
 
 Confirm R2 contains objects under `runs/`, and D1 has a completed `recon_jobs` row plus a `run_summaries` row.
 
-## 5. Install systemd Service
+## 6. Install systemd Service
 
 ```bash
 sudo cp /opt/osint-recon/deploy/systemd/osint-recon-worker.service /etc/systemd/system/osint-recon-worker.service

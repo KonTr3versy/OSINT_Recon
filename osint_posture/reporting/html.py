@@ -11,6 +11,9 @@ from .common import (
     sorted_backlog,
     subdomain_attribution,
     subdomain_items,
+    technology_fingerprints,
+    verified_surface,
+    well_known_metadata,
 )
 
 
@@ -77,6 +80,33 @@ def build_html(findings: dict) -> str:
     subdomain_rows = "".join(
         f"<tr><td>{escape(subdomain)}</td></tr>"
         for subdomain in subdomains
+    )
+    verified = verified_surface(findings)
+    verified_rows = "".join(
+        "<tr>"
+        f"<td>{escape(str(item.get('url', item.get('host', ''))))}</td>"
+        f"<td>{escape(str(item.get('method', 'HEAD')))}</td>"
+        f"<td>{escape(str(item.get('status', 'unknown')))}</td>"
+        "</tr>"
+        for item in verified.get("hosts", []) if isinstance(item, dict)
+    )
+    well_known = well_known_metadata(findings)
+    well_known_rows = "".join(
+        "<tr>"
+        f"<td>{escape(str(item.get('url', '')))}</td>"
+        f"<td>{escape(str(item.get('status', 'unknown')))}</td>"
+        f"<td>{escape(str(item.get('content_type', '')))}</td>"
+        "</tr>"
+        for item in well_known.get("checks", []) if isinstance(item, dict)
+    )
+    fingerprints = technology_fingerprints(findings)
+    fingerprint_rows = "".join(
+        "<tr>"
+        f"<td>{escape(str(item.get('technology', '')))}</td>"
+        f"<td>{escape(str(item.get('source', '')))}</td>"
+        f"<td>{escape(str(item.get('evidence', '')))}</td>"
+        "</tr>"
+        for item in fingerprints.get("hints", []) if isinstance(item, dict)
     )
 
     backlog_rows = ""
@@ -193,6 +223,48 @@ def build_html(findings: dict) -> str:
     </thead>
     <tbody>
       {subdomain_rows or '<tr><td>No subdomains were discovered from passive sources.</td></tr>'}
+    </tbody>
+  </table>
+
+  <h2>Verified External Surface</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>URL</th>
+        <th>Method</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {verified_rows or '<tr><td colspan="3">No verified HTTP surfaces recorded.</td></tr>'}
+    </tbody>
+  </table>
+
+  <h2>Well-Known Metadata</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>URL</th>
+        <th>Status</th>
+        <th>Content Type</th>
+      </tr>
+    </thead>
+    <tbody>
+      {well_known_rows or '<tr><td colspan="3">No well-known metadata checks recorded.</td></tr>'}
+    </tbody>
+  </table>
+
+  <h2>Technology Fingerprints</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Technology</th>
+        <th>Source</th>
+        <th>Evidence</th>
+      </tr>
+    </thead>
+    <tbody>
+      {fingerprint_rows or '<tr><td colspan="3">No technology fingerprints recorded.</td></tr>'}
     </tbody>
   </table>
 

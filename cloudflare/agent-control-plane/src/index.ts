@@ -17,7 +17,7 @@ import {
 import { runReconModel } from "./ai";
 import { canQueuePlan, proposeReconPlan } from "./policy";
 import { ReconAgent } from "./recon-agent";
-import type { AssetRecord, DnsPolicy, Env, ReconMode, ReconPlanProposal, ReconWorkflowParams } from "./types";
+import type { AssetRecord, DnsPolicy, Env, ReconLevel, ReconMode, ReconPlanProposal, ReconWorkflowParams } from "./types";
 
 export { ReconAgent };
 
@@ -245,6 +245,7 @@ async function startRecon(env: Env, request: Request, identity: AccessIdentity):
     reconLevel.enableThirdPartyIntel,
     reconLevel.budgets,
   );
+  applyReconLevelSources(proposal, reconLevel.id);
   const planId = await persistPlan(env, orgId, proposal, identity);
   const workflowId = workflowIdForPlan(planId);
   await startReconWorkflow(env, orgId, planId, workflowId, identity);
@@ -483,6 +484,7 @@ async function enqueuePlan(env: Env, identity: AccessIdentity, orgId: string, pl
     dnsPolicy: String(plan.requested_dns_policy) as DnsPolicy,
     enableThirdPartyIntel: Boolean(plan.enable_third_party_intel),
     budgets: JSON.parse(String(plan.budgets_json)),
+    reconLevel: inferReconLevelFromPlan(plan),
     ...(workflowId ? { workflowId } : {}),
   };
   const inserted = await env.DB.prepare(
@@ -497,6 +499,47 @@ async function enqueuePlan(env: Env, identity: AccessIdentity, orgId: string, pl
   await env.RECON_JOBS.send(payload);
   await audit(env, partialPayload.orgId, "job.queued", "recon_job", inserted.id, withActor(identity, payload));
   return payload;
+}
+
+function inferReconLevelFromPlan(plan: Record<string, string | number>): ReconLevel {
+  const mode = String(plan.requested_mode);
+  const dnsPolicy = String(plan.requested_dns_policy);
+  const enableThirdPartyIntel = Boolean(plan.enable_third_party_intel);
+  const expectedSources = parseJsonArray(plan.expected_sources_json);
+  if (expectedSources.includes("verified_surface")) {
+    return "low-noise-verified-surface";
+  }
+  if (enableThirdPartyIntel) {
+    return "third-party-intel";
+  }
+  if (mode === "low-noise" && dnsPolicy === "full") {
+    return "low-noise-full-dns";
+  }
+  if (mode === "low-noise") {
+    return "low-noise";
+  }
+  if (dnsPolicy === "full") {
+    return "passive-full-dns";
+  }
+  return "safe-passive";
+}
+
+function applyReconLevelSources(proposal: ReconPlanProposal, reconLevel: string): ReconPlanProposal {
+  if (reconLevel !== "low-noise-verified-surface") {
+    return proposal;
+  }
+  for (const source of [
+    "passive_tool_subdomains",
+    "subdomain_resolution",
+    "verified_surface",
+    "well_known_metadata",
+    "technology_fingerprints",
+  ]) {
+    if (!proposal.expectedSources.includes(source)) {
+      proposal.expectedSources.push(source);
+    }
+  }
+  return proposal;
 }
 
 async function loadPlanForQueue(env: Env, orgId: string, planId: number): Promise<Record<string, string | number> | null> {
@@ -612,6 +655,7 @@ async function rerunJob(env: Env, request: Request, identity: AccessIdentity, jo
     Boolean(previousPayload.enableThirdPartyIntel),
     parseBudgetRecord(previousPayload.budgets),
   );
+  applyReconLevelSources(proposal, String(previousPayload.reconLevel));
   const planId = await persistPlan(env, orgId, proposal, identity);
   if (proposal.requiresApproval) {
     const approval = await requestApprovalForPlan(env, orgId, planId, proposal.rationale);
@@ -1141,6 +1185,7 @@ function renderDashboardV2(): string {
               <option value="passive-full-dns">Passive + full DNS - approval required</option>
               <option value="low-noise">Low-noise web checks - approval required</option>
               <option value="low-noise-full-dns">Low-noise + full DNS - approval required</option>
+              <option value="low-noise-verified-surface">Verified external surface - approval required</option>
               <option value="third-party-intel">Third-party intel - approval required</option>
             </select>
             <div id="level-hint" class="section-subtitle">No target HTTP, minimal DNS, passive public sources only.</div>
@@ -1180,6 +1225,7 @@ function renderDashboardV2(): string {
       "passive-full-dns": "Broader target DNS checks. Requires approval before queueing.",
       "low-noise": "Capped in-scope HEAD/GET checks with minimal DNS. Requires approval.",
       "low-noise-full-dns": "Capped web checks plus broader DNS. Requires approval.",
+      "low-noise-verified-surface": "Full DNS, optional passive OSINT adapters, HEAD-only HTTP metadata, and well-known checks. Requires approval.",
       "third-party-intel": "Uses approved passive third-party intel providers. Requires approval and executor API keys."
     };
     const state = { jobs: [], selectedJobId: null, selectedJob: null, approvals: [] };
@@ -1205,13 +1251,14 @@ function renderDashboardV2(): string {
     function ledgerCounts(job) { return job.ledgerTotals && job.ledgerTotals.counts || {}; }
     function summaryScores(job) { return job.summary || {}; }
     function artifactLinkButton(job, suffix) { if (!Array.isArray(job.artifacts)) return null; const index = job.artifacts.findIndex((artifact) => artifact && artifact.key && artifact.key.endsWith(suffix)); if (index < 0) return null; return el("a", { class: "btn secondary", href: "/api/jobs/" + job.id + "/artifacts/" + index, target: "_blank", rel: "noopener noreferrer" }, [document.createTextNode("Open report")]); }
-    function renderHeader(job) { const workflow = job.workflowId || job.workflowStatus ? " · workflow " + safeText(job.workflowStatus || job.workflowId, "started") : ""; return el("div", { class: "run-header" }, [el("div", {}, [el("div", { class: "eyebrow", text: safeText(job.status, "No run selected") + " recon run · Job " + safeText(job.id, "n/a") + workflow }), el("h1", { text: safeText(job.domain, "Select a job") }), el("div", { class: "subtitle muted", text: safeText(job.company, "No organization") + " · " + safeText(job.mode, "passive") + "/" + safeText(job.dnsPolicy, "minimal") + (job.enableThirdPartyIntel ? " · third-party intel" : " · no third-party intel") })]), el("div", { class: "header-actions" }, [badge(job.status || "unknown"), el("button", { class: "btn secondary", type: "button", onclick: () => rerunSelectedJob(job), text: "Run again" }), artifactLinkButton(job, "agent_enhanced_report.html") || artifactLinkButton(job, "summary.md") || el("button", { class: "btn ghost", type: "button", disabled: "true", text: "No report yet" })])]); }
-    function renderScores(job) { const scores = summaryScores(job); const counts = ledgerCounts(job); return el("div", { class: "score-grid" }, [metricCard("Email posture", scores.email_posture_score, "Higher is better. No score-impacting mail findings."), metricCard("Exposure score", scores.exposure_score, "Passive evidence found no scored exposure issues."), metricCard("Target HTTP", counts.target_http || 0, "No target-origin web requests occurred.", "passive"), metricCard("Target DNS", counts.target_dns || 0, "DNS queries performed under selected policy.", "review"), metricCard("Source calls", counts.third_party_http || 0, "Passive CT and public-source provider calls.", "review")]); }
+    function renderHeader(job) { const workflow = job.workflowId || job.workflowStatus ? " · workflow " + safeText(job.workflowStatus || job.workflowId, "started") : ""; return el("div", { class: "run-header" }, [el("div", {}, [el("div", { class: "eyebrow", text: safeText(job.status, "No run selected") + " recon run · Job " + safeText(job.id, "n/a") + workflow }), el("h1", { text: safeText(job.domain, "Select a job") }), el("div", { class: "subtitle muted", text: safeText(job.company, "No organization") + " · " + safeText(job.reconLevel, "safe-passive") + " · " + safeText(job.mode, "passive") + "/" + safeText(job.dnsPolicy, "minimal") + (job.enableThirdPartyIntel ? " · third-party intel" : " · no third-party intel") })]), el("div", { class: "header-actions" }, [badge(job.status || "unknown"), el("button", { class: "btn secondary", type: "button", onclick: () => rerunSelectedJob(job), text: "Run again" }), artifactLinkButton(job, "agent_enhanced_report.html") || artifactLinkButton(job, "summary.md") || el("button", { class: "btn ghost", type: "button", disabled: "true", text: "No report yet" })])]); }
+    function renderScores(job) { const scores = summaryScores(job); const counts = ledgerCounts(job); const targetHttp = counts.target_http || 0; return el("div", { class: "score-grid" }, [metricCard("Email posture", scores.email_posture_score, "Higher is better. Deductions appear in findings."), metricCard("Exposure score", scores.exposure_score, "Higher is better. Deductions are evidence-backed."), metricCard("Target HTTP", targetHttp, targetHttp ? "Approved low-noise target-origin HTTP metadata checks." : "No target-origin web requests occurred.", targetHttp ? "review" : "passive"), metricCard("Target DNS", counts.target_dns || 0, "DNS queries performed under selected policy.", "review"), metricCard("Source calls", counts.third_party_http || 0, "Passive CT and public-source provider calls.", "review")]); }
     function renderAnalyst(job) { return el("section", { class: "panel" }, [sectionHead("SOC analyst notes", "Score-aware AI analysis grounded in deterministic artifacts."), el("div", { class: "note-box" }, [el("p", { text: job.agentSummary || "AI analyst notes are not available yet. The deterministic run status and artifacts remain the source of truth." })])]); }
     function categoryTone(category) { const value = String(category || "").toLowerCase(); if (value.includes("identity")) return "blue"; if (value.includes("vpn")) return "amber"; if (value.includes("mail")) return "teal"; if (value.includes("dev")) return "violet"; if (value.includes("brand") || value.includes("payment")) return "green"; if (value.includes("admin") || value.includes("hr")) return "amber"; return ""; }
     function renderSubdomains(job) { const analysis = job.subdomainPhishingAnalysis || {}; const targets = Array.isArray(analysis.notableTargets) ? analysis.notableTargets : []; const inventory = job.subdomainInventory || {}; const inventoryHosts = Array.isArray(inventory.subdomains) ? inventory.subdomains : []; const rows = targets.length ? targets : inventoryHosts.slice(0, 20).map((host) => ({ subdomain: host, category: "low-signal", rationale: "Discovered in passive subdomain inventory. No sensitive role indicator was assigned.", evidenceRef: "findings.evidence.passive_subdomains.subdomains" })); return el("section", { class: "panel" }, [sectionHead("Subdomains and phishing-target classification", "Only discovered hostnames from passive evidence are analyzed. Invented hostnames are filtered before display."), rows.length ? el("div", { class: "subdomain-table" }, rows.map((target) => el("div", { class: "subdomain-row" }, [el("div", {}, [el("div", { class: "host", text: safeText(target.subdomain, "unknown") }), el("div", { class: "evidence mono", text: safeText(target.evidenceRef, "passive_subdomains.json") })]), badge(safeText(target.category, "low-signal"), categoryTone(target.category)), el("div", { class: "row-note", text: safeText(target.rationale, "No additional rationale available.") })]))) : el("div", { class: "muted", text: "No subdomains were discovered for this run." })]); }
     function backlogItems(job) { const findings = job.findings || {}; return Array.isArray(findings.prioritized_backlog) ? findings.prioritized_backlog : []; }
     function renderFindings(job) { const items = backlogItems(job); if (!items.length) return el("section", { class: "panel" }, [sectionHead("Evidence-backed findings", "Backlog items stay traceable to deterministic evidence refs."), el("div", { class: "empty-state" }, [el("span", { class: "icon-box", text: "✓" }), el("div", {}, [el("strong", { text: "No scored remediation backlog for this run" }), el("span", { text: "The run still preserves raw evidence, source warnings, and artifacts for analyst review." })])])]); return el("section", { class: "panel" }, [sectionHead("Evidence-backed findings", "Backlog items stay traceable to deterministic evidence refs."), el("div", { class: "artifact-list" }, items.map((item) => el("div", { class: "artifact-row" }, [badge(safeText(item.priority, "review"), item.priority === "High" ? "red" : item.priority === "Medium" ? "amber" : "teal"), el("div", {}, [el("div", { class: "artifact-title", text: safeText(item.title, "Untitled finding") }), el("div", { class: "artifact-meta", text: safeText(item.evidence || item.evidence_ref || item.evidenceRef, "No evidence ref") })])])))]); }
+    function renderVerifiedSurface(job) { const verified = job.verifiedSurface || {}; const hosts = Array.isArray(verified.hosts) ? verified.hosts : []; const wellKnown = job.wellKnownMetadata || {}; const checks = Array.isArray(wellKnown.checks) ? wellKnown.checks : []; const tech = job.technologyFingerprints || {}; const hints = Array.isArray(tech.hints) ? tech.hints : []; return el("section", { class: "panel" }, [sectionHead("Verified external surface", "Approval-gated full-DNS and HEAD-only HTTP metadata results."), hosts.length ? el("div", { class: "artifact-list" }, hosts.slice(0, 8).map((host) => el("div", { class: "artifact-row" }, [badge(safeText(host.status, "n/a"), Number(host.status) >= 200 && Number(host.status) < 400 ? "green" : "amber"), el("div", {}, [el("div", { class: "artifact-title", text: safeText(host.url || host.host, "unknown host") }), el("div", { class: "artifact-meta", text: "method=" + safeText(host.method, "HEAD") })])])) ) : el("div", { class: "muted", text: safeText(verified.reason, "No verified HTTP surfaces recorded.") }), checks.length ? el("div", { class: "section-subtitle", text: "Well-known checks: " + checks.length }) : "", hints.length ? el("div", { class: "section-subtitle", text: "Technology fingerprints: " + hints.slice(0, 5).map((hint) => safeText(hint.technology, "unknown")).join(", ") }) : ""]); }
     function renderWorkflow(job) { const status = job.workflowStatus || job.status || "queued"; const steps = [["Plan created","done"],["Approval check",job.status === "rejected" ? "rejected" : "done"],["Queue VPS executor",["queued","running","processing_result","completed"].includes(status) || job.status === "completed" ? "done" : "next"],["Executor callback",job.status === "completed" || status === "processing_result" ? "done" : status === "running" ? "active" : "next"],["AI enhanced report",job.status === "completed" ? "done" : status === "processing_result" ? "active" : "next"]]; return el("section", { class: "panel" }, [sectionHead("Workflow state", "Cloudflare Workflow coordinates the run lifecycle."), el("div", { class: "timeline" }, steps.map((step) => el("div", { class: "timeline-step" }, [badge(step[1] === "done" ? "done" : step[1] === "active" ? "active" : step[1] === "rejected" ? "rejected" : "next", step[1] === "done" ? "green" : step[1] === "active" ? "blue" : step[1] === "rejected" ? "red" : ""), el("div", {}, [el("div", { class: "step-title", text: step[0] }), el("div", { class: "step-meta", text: step[1] === "done" ? "Completed in workflow" : step[1] === "active" ? "Processing now" : "Waiting" })])])))]); }
     function countValue(value) { if (Array.isArray(value)) return value.length; if (value && typeof value === "object") return Object.keys(value).length; if (typeof value === "number") return value; return 0; }
     function driftRow(label, value, tone) { return el("div", { class: "drift-row" }, [el("span", { text: label }), badge(String(value), tone)]); }
@@ -1220,7 +1267,7 @@ function renderDashboardV2(): string {
     function artifactLabel(key) { const parts = String(key || "").split("/"); return parts[parts.length - 1] || "artifact"; }
     function renderArtifacts(job) { const artifacts = Array.isArray(job.artifacts) ? job.artifacts : []; return el("section", { class: "panel" }, [sectionHead("Artifacts", "Authenticated Worker proxy links to R2 evidence."), artifacts.length ? el("div", { class: "artifact-list" }, artifacts.map((artifact, index) => { const key = artifact && artifact.key ? String(artifact.key) : ""; const type = artifactType(key); return el("div", { class: "artifact-row" }, [el("span", { class: "artifact-icon " + type, text: type === "html" ? "H" : type === "md" ? "M" : "J" }), el("div", {}, [key ? el("a", { class: "artifact-title", href: "/api/jobs/" + job.id + "/artifacts/" + index, target: "_blank", rel: "noopener noreferrer", text: artifactLabel(key) }) : el("span", { class: "artifact-title", text: "artifact" }), el("div", { class: "artifact-meta", text: type.toUpperCase() + " · " + safeText(artifact.bytes ? artifact.bytes + " bytes" : "", "recorded") })])]); })) : el("div", { class: "muted", text: "No artifacts have been recorded yet." })]); }
     function renderLedger(job) { const counts = ledgerCounts(job); return el("section", { class: "panel" }, [sectionHead("Safety ledger", "Visible counts make passive mode auditable."), el("div", { class: "row-note" }, [document.createTextNode("target_http=" + (counts.target_http || 0) + " means target-origin HTTP. "), document.createElement("br"), document.createTextNode("target_dns=" + (counts.target_dns || 0) + " means target DNS queries. "), document.createElement("br"), document.createTextNode("third_party_http=" + (counts.third_party_http || 0) + " means passive provider/source requests, not target exposure.")])]); }
-    function renderDetail(job) { const container = document.getElementById("run-detail"); container.textContent = ""; if (!job) { container.append(el("section", { class: "panel" }, [sectionHead("No run selected", "Start recon or select a completed job to review evidence.")])); return; } container.append(renderHeader(job), renderScores(job), el("div", { class: "content-grid" }, [el("div", { class: "left-col" }, [renderAnalyst(job), renderSubdomains(job), renderFindings(job)]), el("div", { class: "right-col" }, [renderWorkflow(job), renderDrift(job), renderArtifacts(job), renderLedger(job)])])); }
+    function renderDetail(job) { const container = document.getElementById("run-detail"); container.textContent = ""; if (!job) { container.append(el("section", { class: "panel" }, [sectionHead("No run selected", "Start recon or select a completed job to review evidence.")])); return; } container.append(renderHeader(job), renderScores(job), el("div", { class: "content-grid" }, [el("div", { class: "left-col" }, [renderAnalyst(job), renderSubdomains(job), renderVerifiedSurface(job), renderFindings(job)]), el("div", { class: "right-col" }, [renderWorkflow(job), renderDrift(job), renderArtifacts(job), renderLedger(job)])])); }
     function renderJobsList() { const container = document.getElementById("jobs-list"); container.textContent = ""; if (!state.jobs.length) { container.append(el("div", { class: "muted", text: "No jobs yet." })); return; } for (const job of state.jobs.slice(0, 8)) container.append(el("button", { class: "job-item" + (job.id === state.selectedJobId ? " selected" : ""), type: "button", onclick: () => selectJob(job.id) }, [el("div", { class: "job-top" }, [el("strong", { text: safeText(job.domain, "unknown domain") }), badge(job.status || "unknown")]), el("div", { class: "job-meta", text: "Job " + job.id + " · " + safeText(job.company, "No organization") }), el("div", { class: "job-meta", text: safeText(job.createdAt, "") })])); }
     function renderApprovals() { const panel = document.getElementById("approval-panel"); const container = document.getElementById("approvals-list"); const pending = state.approvals.filter((approval) => approval.status === "pending"); panel.style.display = pending.length ? "block" : "none"; container.textContent = ""; for (const approval of pending) container.append(el("article", { class: "approval-item" }, [el("div", { class: "approval-top" }, [el("div", {}, [el("strong", { text: safeText(approval.domain, "unknown domain") }), el("div", { class: "job-meta", text: "Approval " + approval.id + " · Plan " + approval.reconPlanId + " · " + safeText(approval.company, "No organization") }), el("div", { class: "job-meta", text: "Mode: " + safeText(approval.requestedMode, "passive") + " · DNS: " + safeText(approval.requestedDnsPolicy, "minimal") })]), badge(approval.status || "pending")]), el("div", { class: "row-note", text: safeText(approval.reason, "Approval required for elevated recon.") }), el("div", { class: "approval-actions" }, [el("button", { class: "btn", type: "button", onclick: () => decideApproval(approval.id, "approve"), text: "Approve and queue" }), el("button", { class: "btn ghost", type: "button", onclick: () => decideApproval(approval.id, "reject"), text: "Reject" })]) ])); }
     async function loadJobs(preserveSelection) { const response = await fetch("/api/jobs", { headers: { "X-Org-Id": "default" } }); const jobs = await response.json(); state.jobs = Array.isArray(jobs) ? jobs : []; if (!preserveSelection || !state.selectedJobId || !state.jobs.some((job) => job.id === state.selectedJobId)) { const completed = state.jobs.find((job) => job.status === "completed"); state.selectedJobId = (completed || state.jobs[0] || {}).id || null; } renderJobsList(); if (state.selectedJobId) await selectJob(state.selectedJobId, true); else renderDetail(null); }

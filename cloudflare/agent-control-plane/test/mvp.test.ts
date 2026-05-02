@@ -36,6 +36,17 @@ describe("MVP one-click recon helpers", () => {
       dnsPolicy: "minimal",
       enableThirdPartyIntel: true,
     });
+    expect(resolveReconLevel("low-noise-verified-surface")).toMatchObject({
+      mode: "low-noise",
+      dnsPolicy: "full",
+      enableThirdPartyIntel: false,
+      budgets: {
+        max_target_http_requests_total: 30,
+        max_target_http_per_host: 2,
+        max_target_http_per_minute: 10,
+        max_target_dns_queries: 100,
+      },
+    });
     expect(resolveReconLevel("unknown")).toMatchObject({ id: "safe-passive" });
   });
 
@@ -60,6 +71,9 @@ describe("MVP one-click recon helpers", () => {
         ledgerTotals: { counts: { target_http: 0 } },
         drift: { newRun: true },
         subdomainPhishingAnalysis: { overview: "Login portal is attractive." },
+        verifiedSurface: { hosts: [{ host: "login.example.com", status: 200 }] },
+        wellKnownMetadata: { checks: [{ url: "https://example.com/security.txt", status: 200 }] },
+        technologyFingerprints: { hints: [{ technology: "Microsoft 365" }] },
         agentSummary: "Looks good.",
       }),
     });
@@ -75,6 +89,9 @@ describe("MVP one-click recon helpers", () => {
     expect(summary.ledgerTotals).toEqual({ counts: { target_http: 0 } });
     expect(summary.drift).toEqual({ newRun: true });
     expect(summary.subdomainPhishingAnalysis).toEqual({ overview: "Login portal is attractive." });
+    expect(summary.verifiedSurface).toEqual({ hosts: [{ host: "login.example.com", status: 200 }] });
+    expect(summary.wellKnownMetadata).toEqual({ checks: [{ url: "https://example.com/security.txt", status: 200 }] });
+    expect(summary.technologyFingerprints).toEqual({ hints: [{ technology: "Microsoft 365" }] });
     expect(summary.agentSummary).toBe("Looks good.");
   });
 

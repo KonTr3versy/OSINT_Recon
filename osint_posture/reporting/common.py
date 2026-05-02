@@ -76,6 +76,10 @@ def evidence_snapshot(evidence: dict) -> list[dict]:
     users = evidence.get("passive_users", {})
     web = evidence.get("web_signals", {})
     subdomains = evidence.get("passive_subdomains", {})
+    resolution = evidence.get("subdomain_resolution", {})
+    verified = evidence.get("verified_surface", {})
+    well_known = evidence.get("well_known_metadata", {})
+    fingerprints = evidence.get("technology_fingerprints", {})
 
     spf_status = "present" if dns.get("spf_raw") else "missing"
     dmarc_status = "present" if dns.get("dmarc_raw") else "missing"
@@ -84,6 +88,10 @@ def evidence_snapshot(evidence: dict) -> list[dict]:
     passive_users = len(users.get("users", []) or [])
     header_samples = len(web.get("security_headers", []) or [])
     subdomain_count = len(subdomains.get("subdomains", []) or [])
+    resolved_hosts = len(resolution.get("resolved", []) or [])
+    verified_hosts = len(verified.get("hosts", []) or [])
+    well_known_checks = len(well_known.get("checks", []) or [])
+    tech_hints = len(fingerprints.get("hints", []) or [])
 
     return [
         {"label": "SPF", "value": spf_status, "source": "dns_mail_profile"},
@@ -92,6 +100,10 @@ def evidence_snapshot(evidence: dict) -> list[dict]:
         {"label": "Third-party services", "value": services, "source": "third_party_intel"},
         {"label": "Passive user candidates", "value": passive_users, "source": "passive_users"},
         {"label": "Discovered subdomains", "value": subdomain_count, "source": "passive_subdomains"},
+        {"label": "Resolved subdomains", "value": resolved_hosts, "source": "subdomain_resolution"},
+        {"label": "Verified HTTP surfaces", "value": verified_hosts, "source": "verified_surface"},
+        {"label": "Well-known metadata checks", "value": well_known_checks, "source": "well_known_metadata"},
+        {"label": "Technology fingerprints", "value": tech_hints, "source": "technology_fingerprints"},
         {"label": "Security-header samples", "value": header_samples, "source": "web_signals"},
     ]
 
@@ -118,3 +130,24 @@ def subdomain_attribution(findings: dict) -> dict:
     inventory = subdomain_inventory(findings)
     attribution = inventory.get("attribution", {})
     return attribution if isinstance(attribution, dict) else {}
+
+
+def verified_surface(findings: dict) -> dict:
+    evidence = findings.get("evidence", {})
+    if isinstance(evidence, dict) and isinstance(evidence.get("verified_surface"), dict):
+        return evidence["verified_surface"]
+    return {}
+
+
+def well_known_metadata(findings: dict) -> dict:
+    evidence = findings.get("evidence", {})
+    if isinstance(evidence, dict) and isinstance(evidence.get("well_known_metadata"), dict):
+        return evidence["well_known_metadata"]
+    return {}
+
+
+def technology_fingerprints(findings: dict) -> dict:
+    evidence = findings.get("evidence", {})
+    if isinstance(evidence, dict) and isinstance(evidence.get("technology_fingerprints"), dict):
+        return evidence["technology_fingerprints"]
+    return {}

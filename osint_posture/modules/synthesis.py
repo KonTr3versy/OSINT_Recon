@@ -165,12 +165,28 @@ def run(results: dict) -> SynthesisModuleResult:
     web = results.get("web_signals", {})
     users = results.get("passive_users", {})
     subdomains = results.get("passive_subdomains", {})
+    tool_subdomains = results.get("passive_tool_subdomains", {})
+    resolution = results.get("subdomain_resolution", {})
+    verified_surface = results.get("verified_surface", {})
+    well_known = results.get("well_known_metadata", {})
+    fingerprints = results.get("technology_fingerprints", {})
 
     spf = dns.get("spf", {})
     dmarc = dns.get("dmarc", {})
     dkim = dns.get("dkim", {})
     services = third_party.get("services", [])
-    security_headers = web.get("security_headers", [])
+    security_headers = [
+        *(web.get("security_headers", []) or []),
+        *(verified_surface.get("security_headers", []) or []),
+    ]
+    combined_subdomains = sorted(
+        set(
+            [
+                *(subdomains.get("subdomains", []) or []),
+                *(tool_subdomains.get("subdomains", []) or []),
+            ]
+        )
+    )
 
     email_score, email_notes, email_applied_rules = score_email_posture(spf, dmarc, dkim)
     exposure_score, exposure_notes, exposure_applied_rules = score_exposure(
@@ -235,7 +251,11 @@ def run(results: dict) -> SynthesisModuleResult:
         "exposure_score": exposure_score,
         "email_notes": email_notes,
         "exposure_notes": exposure_notes,
-        "subdomain_count": len(subdomains.get("subdomains", []) or []),
+        "subdomain_count": len(combined_subdomains),
+        "resolved_subdomain_count": len(resolution.get("resolved", []) or []),
+        "verified_surface_count": len(verified_surface.get("hosts", []) or []),
+        "well_known_check_count": len(well_known.get("checks", []) or []),
+        "technology_fingerprint_count": len(fingerprints.get("hints", []) or []),
     }
 
     spf_raw = spf.get("raw") or ""
@@ -254,13 +274,14 @@ def run(results: dict) -> SynthesisModuleResult:
         "third_party_intel": third_party,
         "passive_users": users,
         "passive_subdomains": {
-            "subdomains": subdomains.get("subdomains", []),
+            "subdomains": combined_subdomains,
             "attribution": subdomains.get("attribution", {}),
+            "tool_attribution": tool_subdomains.get("attribution", {}),
             "removed_wildcards": subdomains.get("removed_wildcards", 0),
             "invalid_entries": subdomains.get("invalid_entries", 0),
-            "total_seen": subdomains.get("total_seen", 0),
+            "total_seen": subdomains.get("total_seen", 0) + len(tool_subdomains.get("subdomains", []) or []),
             "provenance": {
-                "source": "passive_subdomains",
+                "source": "passive_subdomains+passive_tool_subdomains",
                 "confidence": "medium",
                 "last_verified_at": datetime.now(timezone.utc).isoformat(),
             },
@@ -273,6 +294,10 @@ def run(results: dict) -> SynthesisModuleResult:
                 "last_verified_at": datetime.now(timezone.utc).isoformat(),
             },
         },
+        "verified_surface": verified_surface,
+        "well_known_metadata": well_known,
+        "technology_fingerprints": fingerprints,
+        "subdomain_resolution": resolution,
     }
 
     return SynthesisModuleResult(

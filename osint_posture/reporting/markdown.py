@@ -9,6 +9,9 @@ from .common import (
     sorted_backlog,
     subdomain_attribution,
     subdomain_items,
+    technology_fingerprints,
+    verified_surface,
+    well_known_metadata,
 )
 
 
@@ -73,6 +76,31 @@ def build_summary(findings: dict) -> str:
                 lines.append(f"- Source warning: {warning}")
         for subdomain in subdomains:
             lines.append(f"- {subdomain}")
+    lines.append("")
+
+    lines.append("## Verified External Surface")
+    verified = verified_surface(findings)
+    hosts = verified.get("hosts", []) if isinstance(verified, dict) else []
+    if hosts:
+        for host in hosts:
+            lines.append(f"- {host.get('url', host.get('host', 'unknown'))}: status={host.get('status', 'unknown')} method={host.get('method', 'HEAD')}")
+    else:
+        reason = verified.get("reason") if isinstance(verified, dict) else None
+        lines.append(f"- No verified HTTP surfaces recorded.{f' {reason}' if reason else ''}")
+
+    well_known = well_known_metadata(findings)
+    checks = well_known.get("checks", []) if isinstance(well_known, dict) else []
+    if checks:
+        lines.append("- Well-known metadata checks:")
+        for check in checks[:20]:
+            lines.append(f"  - {check.get('url', 'unknown')}: {check.get('status', 'unknown')}")
+
+    fingerprints = technology_fingerprints(findings)
+    hints = fingerprints.get("hints", []) if isinstance(fingerprints, dict) else []
+    if hints:
+        lines.append("- Technology fingerprints:")
+        for hint in hints[:20]:
+            lines.append(f"  - {hint.get('technology', 'unknown')} ({hint.get('source', 'unknown')})")
     lines.append("")
 
     lines.append("## Prioritized Remediation Backlog")

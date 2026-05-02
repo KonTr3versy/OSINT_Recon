@@ -20,12 +20,14 @@ class CloudflareReconJob(BaseModel):
     dns_policy: DnsPolicy = Field(default=DnsPolicy.minimal, alias="dnsPolicy")
     enable_third_party_intel: bool = Field(default=False, alias="enableThirdPartyIntel")
     budgets: dict[str, int] = Field(default_factory=dict)
+    recon_level: str | None = Field(default=None, alias="reconLevel")
 
 
 def execute_cloudflare_job(job: CloudflareReconJob, *, out_dir: str = "./output") -> dict[str, Any]:
     config = create_run_config(
         domain=job.domain,
         company=job.company,
+        recon_level=job.recon_level,
         out_dir=out_dir,
         mode=job.mode,
         dns_policy=job.dns_policy,
@@ -37,6 +39,8 @@ def execute_cloudflare_job(job: CloudflareReconJob, *, out_dir: str = "./output"
     )
     result = execute_run(config)
     artifacts = load_run_artifacts(result["run_path"])
+    findings = artifacts.get("findings", {})
+    evidence = findings.get("evidence", {}) if isinstance(findings, dict) else {}
     module_statuses = [
         {
             "module": module.get("module"),
@@ -57,10 +61,14 @@ def execute_cloudflare_job(job: CloudflareReconJob, *, out_dir: str = "./output"
         "status": "completed",
         "runPath": result["run_path"],
         "artifactPrefix": artifact_prefix,
+        "reconLevel": job.recon_level,
         "summary": summary,
-        "findings": artifacts.get("findings", {}),
+        "findings": findings,
         "moduleStatuses": module_statuses,
         "ledgerTotals": ledger.get("totals", {}) if isinstance(ledger, dict) else {},
+        "verifiedSurface": evidence.get("verified_surface", {}) if isinstance(evidence, dict) else {},
+        "wellKnownMetadata": evidence.get("well_known_metadata", {}) if isinstance(evidence, dict) else {},
+        "technologyFingerprints": evidence.get("technology_fingerprints", {}) if isinstance(evidence, dict) else {},
     }
 
 

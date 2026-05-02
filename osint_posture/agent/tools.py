@@ -94,6 +94,16 @@ def propose_recon_plan(
         expected_sources.append("third_party_intel")
     if mode == Mode.low_noise.value:
         expected_sources.append("doc_signals")
+        if dns_policy == DnsPolicy.full.value:
+            expected_sources.extend(
+                [
+                    "passive_tool_subdomains",
+                    "subdomain_resolution",
+                    "verified_surface",
+                    "well_known_metadata",
+                    "technology_fingerprints",
+                ]
+            )
 
     rationale = (
         "Scheduled posture run using deterministic recon modules. "
@@ -147,4 +157,3 @@ def update_backlog(item: BacklogItem, *, status: str | None = None, remediation:
     if remediation is not None:
         item.remediation = remediation
     return item
-

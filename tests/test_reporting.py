@@ -60,6 +60,9 @@ def test_reporting_outputs_basic_sections():
                 },
             },
             "web_signals": {"security_headers": []},
+            "verified_surface": {"hosts": [{"url": "https://login.example.com", "method": "HEAD", "status": 200}]},
+            "well_known_metadata": {"checks": [{"url": "https://example.com/security.txt", "status": 200}]},
+            "technology_fingerprints": {"hints": [{"technology": "Microsoft 365", "source": "dns_mail_profile"}]},
         },
         "subdomain_inventory": {
             "subdomains": ["login.example.com", "vpn.example.com"],
@@ -77,6 +80,9 @@ def test_reporting_outputs_basic_sections():
     assert "Scoring Rationale" in md
     assert "Evidence Snapshot" in md
     assert "Discovered Subdomains" in md
+    assert "Verified External Surface" in md
+    assert "https://login.example.com" in md
+    assert "Microsoft 365" in md
     assert "login.example.com" in md
     assert "Source counts: certspotter: 2" in md
     assert "Publish SPF" in md
@@ -87,5 +93,7 @@ def test_reporting_outputs_basic_sections():
     assert "Scoring Rationale" in html
     assert "Evidence Snapshot" in html
     assert "Discovered Subdomains" in html
+    assert "Verified External Surface" in html
+    assert "Technology Fingerprints" in html
     assert "vpn.example.com" in html
     assert "dns_mail_profile" in html

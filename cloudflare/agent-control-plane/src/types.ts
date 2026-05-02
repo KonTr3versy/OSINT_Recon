@@ -6,6 +6,7 @@ export type ReconLevel =
   | "passive-full-dns"
   | "low-noise"
   | "low-noise-full-dns"
+  | "low-noise-verified-surface"
   | "third-party-intel";
 
 export interface Env {
@@ -63,6 +64,7 @@ export interface ReconJobPayload {
   dnsPolicy: DnsPolicy;
   enableThirdPartyIntel: boolean;
   budgets: Record<string, number>;
+  reconLevel?: ReconLevel;
   workflowId?: string;
 }
 

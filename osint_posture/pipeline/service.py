@@ -16,6 +16,7 @@ def create_run_config(
     *,
     domain: str,
     company: str | None = None,
+    recon_level: str | None = None,
     out_dir: str = "./output",
     mode: Mode = Mode.passive,
     dns_policy: DnsPolicy = DnsPolicy.minimal,
@@ -34,6 +35,7 @@ def create_run_config(
     return RunConfig(
         domain=domain,
         company=company,
+        recon_level=recon_level,
         mode=mode,
         dns_policy=dns_policy,
         cache=cache,
@@ -83,4 +85,3 @@ def load_run_artifacts(run_path: str | Path) -> dict[str, str | dict]:
         text = fp.read_text(encoding="utf-8")
         loaded[name] = json.loads(text) if fp.suffix == ".json" else text
     return loaded
-

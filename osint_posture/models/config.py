@@ -27,6 +27,7 @@ class CacheMode(str, Enum):
 class RunConfig(BaseModel):
     domain: str
     company: Optional[str] = None
+    recon_level: Optional[str] = None
     mode: Mode = Mode.passive
     dns_policy: DnsPolicy = DnsPolicy.minimal
     cache: CacheMode = CacheMode.sqlite

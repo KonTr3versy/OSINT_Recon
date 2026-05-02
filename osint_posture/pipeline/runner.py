@@ -13,11 +13,16 @@ from ..modules import (
     dns_mail_profile,
     doc_signals,
     passive_subdomains,
+    passive_tool_subdomains,
     passive_users,
     scope_init,
+    subdomain_resolution,
     synthesis,
+    technology_fingerprints,
     third_party_intel,
+    verified_surface,
     web_signals,
+    well_known_metadata,
 )
 from ..pipeline.context import RunContext
 from ..reporting.csv_backlog import build_csv
@@ -148,6 +153,38 @@ async def run_pipeline(config: RunConfig) -> dict:
         modules.append(subdomains_result)
         _write_json(f"{raw_path}/passive_subdomains.json", subdomains_result.data)
 
+        verified_surface_enabled = config.recon_level == "low-noise-verified-surface"
+
+        passive_tool_result = await _wrap_module_async(
+            "passive_tool_subdomains",
+            passive_tool_subdomains.run(config.domain, config.mode.value, config.dns_policy.value, verified_surface_enabled),
+        )
+        modules.append(passive_tool_result)
+        _write_json(f"{raw_path}/passive_tool_subdomains.json", passive_tool_result.data)
+
+        combined_subdomains = sorted(
+            set(
+                [
+                    *subdomains_result.data.get("subdomains", []),
+                    *passive_tool_result.data.get("subdomains", []),
+                ]
+            )
+        )
+
+        resolution_result = _wrap_module(
+            "subdomain_resolution",
+            subdomain_resolution.run,
+                config.domain,
+                combined_subdomains,
+                config.mode.value,
+                config.dns_policy.value,
+                context.dns_client,
+                config.max_target_dns_queries,
+                verified_surface_enabled,
+            )
+        modules.append(resolution_result)
+        _write_json(f"{raw_path}/subdomain_resolution.json", resolution_result.data)
+
         third_party_result = await _wrap_module_async(
             "third_party_intel",
             third_party_intel.run(
@@ -171,17 +208,58 @@ async def run_pipeline(config: RunConfig) -> dict:
 
         web_result = await _wrap_module_async(
             "web_signals",
-            web_signals.run(config.domain, subdomains_result.data.get("subdomains", []), config.mode.value, context.http_client, config.max_pages),
+            web_signals.run(config.domain, combined_subdomains, config.mode.value, context.http_client, config.max_pages),
         )
         modules.append(web_result)
         _write_json(f"{raw_path}/web_signals.json", web_result.data)
 
         doc_result = await _wrap_module_async(
             "doc_signals",
-            doc_signals.run(config.domain, subdomains_result.data.get("subdomains", []), context.http_client, config.max_pages, config.mode.value),
+            doc_signals.run(config.domain, combined_subdomains, context.http_client, config.max_pages, config.mode.value),
         )
         modules.append(doc_result)
         _write_json(f"{raw_path}/doc_signals.json", doc_result.data)
+
+        verified_surface_result = await _wrap_module_async(
+            "verified_surface",
+            verified_surface.run(
+                config.domain,
+                resolution_result.data,
+                config.mode.value,
+                config.dns_policy.value,
+                context.http_client,
+                config.max_pages,
+                verified_surface_enabled,
+            ),
+        )
+        modules.append(verified_surface_result)
+        _write_json(f"{raw_path}/verified_surface.json", verified_surface_result.data)
+
+        well_known_result = await _wrap_module_async(
+            "well_known_metadata",
+            well_known_metadata.run(
+                config.domain,
+                resolution_result.data,
+                config.mode.value,
+                config.dns_policy.value,
+                context.http_client,
+                max(1, min(3, config.max_pages)),
+                verified_surface_enabled,
+            ),
+        )
+        modules.append(well_known_result)
+        _write_json(f"{raw_path}/well_known_metadata.json", well_known_result.data)
+
+        tech_result = _wrap_module(
+            "technology_fingerprints",
+            technology_fingerprints.run,
+            dns_result.data,
+            combined_subdomains,
+            resolution_result.data,
+            verified_surface_result.data,
+        )
+        modules.append(tech_result)
+        _write_json(f"{raw_path}/technology_fingerprints.json", tech_result.data)
 
         results_map = {m.module: m.data for m in modules}
         synth_payload = synthesis.run(results_map).model_dump()
