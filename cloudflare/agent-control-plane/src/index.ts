@@ -97,7 +97,7 @@ export default {
     }
 
     if (url.pathname === "/") {
-      return new Response(renderDashboard(), { headers: { "content-type": "text/html; charset=utf-8" } });
+      return new Response(renderDashboardV2(), { headers: { "content-type": "text/html; charset=utf-8" } });
     }
     if (request.method === "GET" && url.pathname === "/api/assets") {
       return listAssets(env, request);
@@ -1012,6 +1012,235 @@ class HttpError extends Error {
   ) {
     super(message);
   }
+}
+
+function renderDashboardV2(): string {
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OSINT Recon Agent Control Plane</title>
+  <style>
+    :root { color-scheme: light; --bg:#f6f7f9; --panel:#fff; --panel-muted:#f9fafb; --ink:#172026; --muted:#64748b; --faint:#94a3b8; --line:#dde3ea; --nav:#0f172a; --nav-active:#123235; --teal:#0f766e; --teal-soft:#ddf7f2; --blue:#2563eb; --blue-soft:#eaf1ff; --green:#15803d; --green-soft:#dcfce7; --amber:#b45309; --amber-soft:#fef3c7; --red:#b91c1c; --red-soft:#fee2e2; --violet:#6d28d9; --violet-soft:#f3e8ff; }
+    * { box-sizing: border-box; }
+    body { margin:0; min-height:100vh; font-family:Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color:var(--ink); background:var(--bg); }
+    button,input,select,textarea { font:inherit; }
+    button { border:0; border-radius:8px; cursor:pointer; font-weight:700; }
+    button:disabled { cursor:wait; opacity:.65; }
+    a { color:var(--blue); text-decoration:none; }
+    a:hover { text-decoration:underline; }
+    .app { display:grid; grid-template-columns:256px minmax(0,1fr); min-height:100vh; }
+    .sidebar { background:var(--nav); color:#f8fafc; padding:24px; display:flex; flex-direction:column; gap:28px; }
+    .brand-title { font-size:20px; line-height:28px; font-weight:800; }
+    .brand-subtitle { margin-top:4px; font-size:12px; line-height:17px; color:#94a3b8; }
+    .nav-list { display:grid; gap:8px; }
+    .nav-item { display:flex; align-items:center; gap:10px; min-height:38px; padding:10px 12px; border-radius:8px; color:#cbd5e1; font-size:13px; background:transparent; text-align:left; }
+    .nav-item.active { color:#f8fafc; background:var(--nav-active); }
+    .nav-dot { width:7px; height:7px; border-radius:999px; border:1px solid #64748b; }
+    .active .nav-dot { border-color:#5eead4; background:#5eead4; }
+    .safety-card { margin-top:auto; padding:14px; border-radius:8px; background:#111827; }
+    .safety-card strong { display:block; font-size:13px; line-height:18px; margin-bottom:8px; }
+    .safety-card p { margin:0; font-size:12px; line-height:17px; color:#cbd5e1; }
+    .main { padding:32px; min-width:0; }
+    .run-header { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:24px; align-items:center; margin-bottom:22px; }
+    .eyebrow { color:var(--teal); font-size:12px; line-height:16px; font-weight:800; }
+    h1 { margin:7px 0 4px; font-size:34px; line-height:42px; letter-spacing:0; }
+    h2 { margin:0; font-size:17px; line-height:24px; letter-spacing:0; }
+    p { margin:0; color:var(--muted); line-height:1.45; }
+    .subtitle { font-size:14px; line-height:20px; }
+    .header-actions,.utility-actions,.approval-actions { display:flex; flex-wrap:wrap; gap:10px; }
+    .header-actions { justify-content:flex-end; }
+    .badge { display:inline-flex; align-items:center; justify-content:center; min-height:26px; padding:5px 10px; border-radius:999px; font-size:12px; line-height:16px; font-weight:800; white-space:nowrap; background:var(--panel-muted); color:var(--muted); }
+    .badge.green,.badge.completed,.badge.approved { background:var(--green-soft); color:var(--green); }
+    .badge.blue,.badge.running,.badge.processing_result { background:var(--blue-soft); color:var(--blue); }
+    .badge.teal { background:var(--teal-soft); color:var(--teal); }
+    .badge.amber,.badge.queued,.badge.pending { background:var(--amber-soft); color:var(--amber); }
+    .badge.red,.badge.failed,.badge.rejected { background:var(--red-soft); color:var(--red); }
+    .badge.violet { background:var(--violet-soft); color:var(--violet); }
+    .btn { min-height:34px; padding:8px 12px; background:var(--teal); color:#fff; display:inline-flex; align-items:center; justify-content:center; }
+    .btn.secondary { background:var(--blue-soft); color:var(--blue); }
+    .btn.ghost { background:var(--panel-muted); color:var(--ink); border:1px solid var(--line); }
+    .score-grid { display:grid; grid-template-columns:repeat(5,minmax(145px,1fr)); gap:14px; margin-bottom:22px; }
+    .metric-card,.panel,.job-item,.approval-item { border:1px solid var(--line); background:var(--panel); border-radius:8px; }
+    .metric-card { min-height:150px; padding:18px; }
+    .metric-title { color:var(--muted); font-size:12px; line-height:16px; font-weight:800; margin-bottom:8px; }
+    .metric-row { display:flex; align-items:center; gap:8px; }
+    .metric-value { font-size:30px; line-height:36px; font-weight:850; }
+    .metric-note { margin-top:8px; font-size:12px; line-height:17px; color:var(--muted); }
+    .content-grid { display:grid; grid-template-columns:minmax(0,700px) minmax(340px,400px); gap:20px; align-items:start; }
+    .left-col,.right-col { display:grid; gap:18px; min-width:0; }
+    .panel { padding:20px; }
+    .section-head { margin-bottom:14px; }
+    .section-subtitle { margin-top:4px; font-size:12px; line-height:17px; color:var(--muted); }
+    .note-box { padding:16px; border-radius:8px; background:var(--panel-muted); font-size:14px; line-height:21px; }
+    .note-box p + p { margin-top:10px; }
+    .subdomain-table { display:grid; }
+    .subdomain-row { display:grid; grid-template-columns:minmax(190px,250px) max-content minmax(180px,1fr); gap:12px; align-items:center; min-height:55px; padding:10px 0; border-top:1px solid #edf1f5; }
+    .subdomain-row:first-child { border-top:0; }
+    .host { font-size:13px; line-height:18px; font-weight:800; overflow-wrap:anywhere; }
+    .evidence { margin-top:2px; font-size:11px; line-height:15px; color:var(--faint); overflow-wrap:anywhere; }
+    .row-note { font-size:12px; line-height:17px; color:var(--muted); }
+    .empty-state { display:flex; gap:12px; align-items:center; padding:16px; border-radius:8px; background:var(--green-soft); color:var(--green); }
+    .empty-state strong { display:block; font-size:14px; line-height:20px; }
+    .empty-state span { display:block; margin-top:3px; font-size:12px; line-height:17px; }
+    .icon-box { flex:0 0 auto; display:inline-flex; width:36px; height:36px; align-items:center; justify-content:center; border-radius:8px; background:rgba(21,128,61,.12); font-weight:900; }
+    .timeline,.drift-list,.artifact-list,.job-list,.approval-list { display:grid; gap:10px; }
+    .timeline-step { display:grid; grid-template-columns:50px minmax(0,1fr); gap:10px; align-items:start; }
+    .step-title,.artifact-title { font-size:13px; line-height:18px; font-weight:800; overflow-wrap:anywhere; }
+    .step-meta,.artifact-meta,.job-meta { margin-top:2px; font-size:11px; line-height:15px; color:var(--muted); }
+    .drift-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; align-items:center; min-height:42px; color:var(--muted); font-size:13px; }
+    .artifact-row { display:grid; grid-template-columns:36px minmax(0,1fr); gap:10px; align-items:center; min-height:51px; }
+    .artifact-icon { display:inline-flex; width:28px; height:18px; align-items:center; justify-content:center; border-radius:999px; font-size:11px; line-height:14px; font-weight:900; }
+    .artifact-icon.html,.artifact-icon.md { background:var(--blue-soft); color:var(--blue); }
+    .artifact-icon.json { background:var(--amber-soft); color:var(--amber); }
+    .drawer-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(320px,.75fr); gap:18px; margin-bottom:22px; align-items:start; }
+    form { display:grid; gap:10px; }
+    label { font-size:12px; line-height:16px; font-weight:800; color:var(--ink); }
+    input,select,textarea { width:100%; border:1px solid var(--line); border-radius:8px; padding:10px 11px; background:#fff; color:var(--ink); }
+    textarea { min-height:74px; resize:vertical; }
+    .status-line { min-height:20px; margin-top:10px; font-size:13px; color:var(--muted); }
+    .job-item,.approval-item { padding:12px; display:grid; gap:8px; }
+    .job-item { text-align:left; width:100%; color:var(--ink); background:var(--panel); }
+    .job-item.selected { border-color:var(--teal); box-shadow:inset 3px 0 0 var(--teal); }
+    .job-item strong,.approval-item strong { font-size:13px; line-height:18px; }
+    .job-top,.approval-top { display:flex; justify-content:space-between; gap:10px; align-items:start; }
+    .muted { color:var(--muted); }
+    .mono { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+    pre { margin:0; max-height:260px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; border-radius:8px; background:var(--panel-muted); padding:12px; color:var(--ink); }
+    @media (max-width:1120px) { .app{grid-template-columns:1fr}.sidebar{display:none}.main{padding:22px}.run-header,.drawer-grid,.content-grid{grid-template-columns:1fr}.score-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.header-actions{justify-content:flex-start} }
+    @media (max-width:680px) { h1{font-size:28px;line-height:36px}.score-grid{grid-template-columns:1fr}.subdomain-row{grid-template-columns:1fr;gap:6px} }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div><div class="brand-title">OSINT Recon</div><div class="brand-subtitle">Agentic posture platform</div></div>
+      <nav class="nav-list" aria-label="Primary">
+        <button class="nav-item active" type="button"><span class="nav-dot"></span><span>Run detail</span></button>
+        <button class="nav-item" type="button"><span class="nav-dot"></span><span>Start recon</span></button>
+        <button class="nav-item" type="button"><span class="nav-dot"></span><span>Approvals</span></button>
+        <button class="nav-item" type="button"><span class="nav-dot"></span><span>Artifacts</span></button>
+        <button class="nav-item" type="button"><span class="nav-dot"></span><span>Audit log</span></button>
+        <button class="nav-item" type="button"><span class="nav-dot"></span><span>Settings</span></button>
+      </nav>
+      <div class="safety-card"><strong>Safety boundary</strong><p>LLM plans and explains. The VPS executor is the only deterministic network runner.</p></div>
+    </aside>
+    <main class="main">
+      <section class="drawer-grid" aria-label="Controls">
+        <div class="panel">
+          <div class="section-head"><h2>Start recon</h2><div class="section-subtitle">Create or reuse an asset, start a Workflow, and queue safe passive recon by default.</div></div>
+          <form id="start-form">
+            <label for="domain">Domain</label>
+            <input id="domain" name="domain" placeholder="example.com" autocomplete="off" required />
+            <label for="company">Organization name</label>
+            <input id="company" name="company" placeholder="Example Inc." autocomplete="organization" required />
+            <label for="recon-level">Recon level</label>
+            <select id="recon-level" name="reconLevel">
+              <option value="safe-passive">Safe passive - no approval</option>
+              <option value="passive-full-dns">Passive + full DNS - approval required</option>
+              <option value="low-noise">Low-noise web checks - approval required</option>
+              <option value="low-noise-full-dns">Low-noise + full DNS - approval required</option>
+              <option value="third-party-intel">Third-party intel - approval required</option>
+            </select>
+            <div id="level-hint" class="section-subtitle">No target HTTP, minimal DNS, passive public sources only.</div>
+            <button id="start-button" class="btn" type="submit">Start recon</button>
+          </form>
+          <div id="start-status" class="status-line"></div>
+        </div>
+        <div class="panel">
+          <div class="section-head"><h2>Jobs</h2><div class="section-subtitle">Select a run to review its evidence, drift, artifacts, and AI analysis.</div></div>
+          <div class="utility-actions">
+            <button id="refresh-jobs" class="btn ghost" type="button">Refresh jobs</button>
+            <button id="refresh-approvals" class="btn ghost" type="button">Refresh approvals</button>
+          </div>
+          <div id="jobs-list" class="job-list" aria-live="polite"></div>
+        </div>
+      </section>
+      <section id="approval-panel" class="panel" style="margin-bottom:22px;display:none;">
+        <div class="section-head"><h2>Approval queue</h2><div class="section-subtitle">Elevated recon waits for approval before the Workflow queues the VPS executor.</div></div>
+        <div id="approvals-list" class="approval-list" aria-live="polite"></div>
+      </section>
+      <section id="run-detail" aria-live="polite"></section>
+      <section class="panel" style="margin-top:22px;">
+        <div class="section-head"><h2>Agent smoke test</h2><div class="section-subtitle">A lightweight check that the Cloudflare Agent can answer with its safety boundary.</div></div>
+        <form id="chat-form">
+          <label for="message">Agent message</label>
+          <textarea id="message">What is your safety boundary?</textarea>
+          <button type="submit" class="btn ghost">Send</button>
+        </form>
+        <pre id="output">Waiting for a message.</pre>
+      </section>
+    </main>
+  </div>
+  <script>
+    const orgHeaders = { "content-type": "application/json", "X-Org-Id": "default" };
+    const reconLevelDescriptions = {
+      "safe-passive": "No target HTTP, minimal DNS, passive public sources only.",
+      "passive-full-dns": "Broader target DNS checks. Requires approval before queueing.",
+      "low-noise": "Capped in-scope HEAD/GET checks with minimal DNS. Requires approval.",
+      "low-noise-full-dns": "Capped web checks plus broader DNS. Requires approval.",
+      "third-party-intel": "Uses approved passive third-party intel providers. Requires approval and executor API keys."
+    };
+    const state = { jobs: [], selectedJobId: null, selectedJob: null, approvals: [] };
+    function el(tag, attrs, children) {
+      const node = document.createElement(tag);
+      if (attrs) for (const key in attrs) {
+        if (key === "class") node.className = attrs[key];
+        else if (key === "text") node.textContent = attrs[key];
+        else if (key.startsWith("on") && typeof attrs[key] === "function") node.addEventListener(key.slice(2).toLowerCase(), attrs[key]);
+        else if (attrs[key] !== undefined && attrs[key] !== null) node.setAttribute(key, attrs[key]);
+      }
+      const items = Array.isArray(children) ? children : children ? [children] : [];
+      for (const child of items) node.append(child);
+      return node;
+    }
+    function setText(id, text) { document.getElementById(id).textContent = text; }
+    function safeText(value, fallback) { return value === undefined || value === null || value === "" ? fallback || "n/a" : String(value); }
+    function statusTone(status) { if (status === "completed" || status === "approved") return "green"; if (status === "running" || status === "processing_result") return "blue"; if (status === "queued" || status === "pending") return "amber"; if (status === "failed" || status === "rejected") return "red"; return ""; }
+    function badge(label, tone) { const text = safeText(label, "unknown"); return el("span", { class: "badge " + (tone || statusTone(text)), text }); }
+    function scoreBand(score) { if (typeof score !== "number") return { label: "n/a", tone: "" }; if (score >= 90) return { label: "healthy", tone: "green" }; if (score >= 70) return { label: "review", tone: "amber" }; return { label: "attention", tone: "red" }; }
+    function metricCard(title, value, note, toneLabel) { const band = toneLabel ? { label: toneLabel, tone: toneLabel === "healthy" ? "green" : toneLabel === "passive" ? "blue" : "teal" } : scoreBand(value); return el("div", { class: "metric-card" }, [el("div", { class: "metric-title", text: title }), el("div", { class: "metric-row" }, [el("div", { class: "metric-value", text: safeText(value, "n/a") }), badge(band.label, band.tone)]), el("div", { class: "metric-note", text: note })]); }
+    function sectionHead(title, subtitle) { return el("div", { class: "section-head" }, [el("h2", { text: title }), subtitle ? el("div", { class: "section-subtitle", text: subtitle }) : ""]); }
+    function ledgerCounts(job) { return job.ledgerTotals && job.ledgerTotals.counts || {}; }
+    function summaryScores(job) { return job.summary || {}; }
+    function artifactLinkButton(job, suffix) { if (!Array.isArray(job.artifacts)) return null; const index = job.artifacts.findIndex((artifact) => artifact && artifact.key && artifact.key.endsWith(suffix)); if (index < 0) return null; return el("a", { class: "btn secondary", href: "/api/jobs/" + job.id + "/artifacts/" + index, target: "_blank", rel: "noopener noreferrer" }, [document.createTextNode("Open report")]); }
+    function renderHeader(job) { const workflow = job.workflowId || job.workflowStatus ? " · workflow " + safeText(job.workflowStatus || job.workflowId, "started") : ""; return el("div", { class: "run-header" }, [el("div", {}, [el("div", { class: "eyebrow", text: safeText(job.status, "No run selected") + " recon run · Job " + safeText(job.id, "n/a") + workflow }), el("h1", { text: safeText(job.domain, "Select a job") }), el("div", { class: "subtitle muted", text: safeText(job.company, "No organization") + " · " + safeText(job.mode, "passive") + "/" + safeText(job.dnsPolicy, "minimal") + (job.enableThirdPartyIntel ? " · third-party intel" : " · no third-party intel") })]), el("div", { class: "header-actions" }, [badge(job.status || "unknown"), el("button", { class: "btn secondary", type: "button", onclick: () => rerunSelectedJob(job), text: "Run again" }), artifactLinkButton(job, "agent_enhanced_report.html") || artifactLinkButton(job, "summary.md") || el("button", { class: "btn ghost", type: "button", disabled: "true", text: "No report yet" })])]); }
+    function renderScores(job) { const scores = summaryScores(job); const counts = ledgerCounts(job); return el("div", { class: "score-grid" }, [metricCard("Email posture", scores.email_posture_score, "Higher is better. No score-impacting mail findings."), metricCard("Exposure score", scores.exposure_score, "Passive evidence found no scored exposure issues."), metricCard("Target HTTP", counts.target_http || 0, "No target-origin web requests occurred.", "passive"), metricCard("Target DNS", counts.target_dns || 0, "DNS queries performed under selected policy.", "review"), metricCard("Source calls", counts.third_party_http || 0, "Passive CT and public-source provider calls.", "review")]); }
+    function renderAnalyst(job) { return el("section", { class: "panel" }, [sectionHead("SOC analyst notes", "Score-aware AI analysis grounded in deterministic artifacts."), el("div", { class: "note-box" }, [el("p", { text: job.agentSummary || "AI analyst notes are not available yet. The deterministic run status and artifacts remain the source of truth." })])]); }
+    function categoryTone(category) { const value = String(category || "").toLowerCase(); if (value.includes("identity")) return "blue"; if (value.includes("vpn")) return "amber"; if (value.includes("mail")) return "teal"; if (value.includes("dev")) return "violet"; if (value.includes("brand") || value.includes("payment")) return "green"; if (value.includes("admin") || value.includes("hr")) return "amber"; return ""; }
+    function renderSubdomains(job) { const analysis = job.subdomainPhishingAnalysis || {}; const targets = Array.isArray(analysis.notableTargets) ? analysis.notableTargets : []; const inventory = job.subdomainInventory || {}; const inventoryHosts = Array.isArray(inventory.subdomains) ? inventory.subdomains : []; const rows = targets.length ? targets : inventoryHosts.slice(0, 20).map((host) => ({ subdomain: host, category: "low-signal", rationale: "Discovered in passive subdomain inventory. No sensitive role indicator was assigned.", evidenceRef: "findings.evidence.passive_subdomains.subdomains" })); return el("section", { class: "panel" }, [sectionHead("Subdomains and phishing-target classification", "Only discovered hostnames from passive evidence are analyzed. Invented hostnames are filtered before display."), rows.length ? el("div", { class: "subdomain-table" }, rows.map((target) => el("div", { class: "subdomain-row" }, [el("div", {}, [el("div", { class: "host", text: safeText(target.subdomain, "unknown") }), el("div", { class: "evidence mono", text: safeText(target.evidenceRef, "passive_subdomains.json") })]), badge(safeText(target.category, "low-signal"), categoryTone(target.category)), el("div", { class: "row-note", text: safeText(target.rationale, "No additional rationale available.") })]))) : el("div", { class: "muted", text: "No subdomains were discovered for this run." })]); }
+    function backlogItems(job) { const findings = job.findings || {}; return Array.isArray(findings.prioritized_backlog) ? findings.prioritized_backlog : []; }
+    function renderFindings(job) { const items = backlogItems(job); if (!items.length) return el("section", { class: "panel" }, [sectionHead("Evidence-backed findings", "Backlog items stay traceable to deterministic evidence refs."), el("div", { class: "empty-state" }, [el("span", { class: "icon-box", text: "✓" }), el("div", {}, [el("strong", { text: "No scored remediation backlog for this run" }), el("span", { text: "The run still preserves raw evidence, source warnings, and artifacts for analyst review." })])])]); return el("section", { class: "panel" }, [sectionHead("Evidence-backed findings", "Backlog items stay traceable to deterministic evidence refs."), el("div", { class: "artifact-list" }, items.map((item) => el("div", { class: "artifact-row" }, [badge(safeText(item.priority, "review"), item.priority === "High" ? "red" : item.priority === "Medium" ? "amber" : "teal"), el("div", {}, [el("div", { class: "artifact-title", text: safeText(item.title, "Untitled finding") }), el("div", { class: "artifact-meta", text: safeText(item.evidence || item.evidence_ref || item.evidenceRef, "No evidence ref") })])])))]); }
+    function renderWorkflow(job) { const status = job.workflowStatus || job.status || "queued"; const steps = [["Plan created","done"],["Approval check",job.status === "rejected" ? "rejected" : "done"],["Queue VPS executor",["queued","running","processing_result","completed"].includes(status) || job.status === "completed" ? "done" : "next"],["Executor callback",job.status === "completed" || status === "processing_result" ? "done" : status === "running" ? "active" : "next"],["AI enhanced report",job.status === "completed" ? "done" : status === "processing_result" ? "active" : "next"]]; return el("section", { class: "panel" }, [sectionHead("Workflow state", "Cloudflare Workflow coordinates the run lifecycle."), el("div", { class: "timeline" }, steps.map((step) => el("div", { class: "timeline-step" }, [badge(step[1] === "done" ? "done" : step[1] === "active" ? "active" : step[1] === "rejected" ? "rejected" : "next", step[1] === "done" ? "green" : step[1] === "active" ? "blue" : step[1] === "rejected" ? "red" : ""), el("div", {}, [el("div", { class: "step-title", text: step[0] }), el("div", { class: "step-meta", text: step[1] === "done" ? "Completed in workflow" : step[1] === "active" ? "Processing now" : "Waiting" })])])))]); }
+    function countValue(value) { if (Array.isArray(value)) return value.length; if (value && typeof value === "object") return Object.keys(value).length; if (typeof value === "number") return value; return 0; }
+    function driftRow(label, value, tone) { return el("div", { class: "drift-row" }, [el("span", { text: label }), badge(String(value), tone)]); }
+    function renderDrift(job) { const drift = job.drift || {}; const subdomainChanges = drift.subdomainChanges || {}; const scoreChanges = drift.scoreChanges || {}; return el("section", { class: "panel" }, [sectionHead("Drift from previous run", "Highlights what changed since the last completed job."), el("div", { class: "drift-list" }, [driftRow("New subdomains", countValue(subdomainChanges.added), "blue"), driftRow("Removed subdomains", countValue(subdomainChanges.removed), "green"), driftRow("Score changes", countValue(scoreChanges), countValue(scoreChanges) ? "amber" : "green"), driftRow("New findings", countValue(drift.newFindings), countValue(drift.newFindings) ? "amber" : "green")])]); }
+    function artifactType(key) { if (key.endsWith(".html")) return "html"; if (key.endsWith(".md")) return "md"; return "json"; }
+    function artifactLabel(key) { const parts = String(key || "").split("/"); return parts[parts.length - 1] || "artifact"; }
+    function renderArtifacts(job) { const artifacts = Array.isArray(job.artifacts) ? job.artifacts : []; return el("section", { class: "panel" }, [sectionHead("Artifacts", "Authenticated Worker proxy links to R2 evidence."), artifacts.length ? el("div", { class: "artifact-list" }, artifacts.map((artifact, index) => { const key = artifact && artifact.key ? String(artifact.key) : ""; const type = artifactType(key); return el("div", { class: "artifact-row" }, [el("span", { class: "artifact-icon " + type, text: type === "html" ? "H" : type === "md" ? "M" : "J" }), el("div", {}, [key ? el("a", { class: "artifact-title", href: "/api/jobs/" + job.id + "/artifacts/" + index, target: "_blank", rel: "noopener noreferrer", text: artifactLabel(key) }) : el("span", { class: "artifact-title", text: "artifact" }), el("div", { class: "artifact-meta", text: type.toUpperCase() + " · " + safeText(artifact.bytes ? artifact.bytes + " bytes" : "", "recorded") })])]); })) : el("div", { class: "muted", text: "No artifacts have been recorded yet." })]); }
+    function renderLedger(job) { const counts = ledgerCounts(job); return el("section", { class: "panel" }, [sectionHead("Safety ledger", "Visible counts make passive mode auditable."), el("div", { class: "row-note" }, [document.createTextNode("target_http=" + (counts.target_http || 0) + " means target-origin HTTP. "), document.createElement("br"), document.createTextNode("target_dns=" + (counts.target_dns || 0) + " means target DNS queries. "), document.createElement("br"), document.createTextNode("third_party_http=" + (counts.third_party_http || 0) + " means passive provider/source requests, not target exposure.")])]); }
+    function renderDetail(job) { const container = document.getElementById("run-detail"); container.textContent = ""; if (!job) { container.append(el("section", { class: "panel" }, [sectionHead("No run selected", "Start recon or select a completed job to review evidence.")])); return; } container.append(renderHeader(job), renderScores(job), el("div", { class: "content-grid" }, [el("div", { class: "left-col" }, [renderAnalyst(job), renderSubdomains(job), renderFindings(job)]), el("div", { class: "right-col" }, [renderWorkflow(job), renderDrift(job), renderArtifacts(job), renderLedger(job)])])); }
+    function renderJobsList() { const container = document.getElementById("jobs-list"); container.textContent = ""; if (!state.jobs.length) { container.append(el("div", { class: "muted", text: "No jobs yet." })); return; } for (const job of state.jobs.slice(0, 8)) container.append(el("button", { class: "job-item" + (job.id === state.selectedJobId ? " selected" : ""), type: "button", onclick: () => selectJob(job.id) }, [el("div", { class: "job-top" }, [el("strong", { text: safeText(job.domain, "unknown domain") }), badge(job.status || "unknown")]), el("div", { class: "job-meta", text: "Job " + job.id + " · " + safeText(job.company, "No organization") }), el("div", { class: "job-meta", text: safeText(job.createdAt, "") })])); }
+    function renderApprovals() { const panel = document.getElementById("approval-panel"); const container = document.getElementById("approvals-list"); const pending = state.approvals.filter((approval) => approval.status === "pending"); panel.style.display = pending.length ? "block" : "none"; container.textContent = ""; for (const approval of pending) container.append(el("article", { class: "approval-item" }, [el("div", { class: "approval-top" }, [el("div", {}, [el("strong", { text: safeText(approval.domain, "unknown domain") }), el("div", { class: "job-meta", text: "Approval " + approval.id + " · Plan " + approval.reconPlanId + " · " + safeText(approval.company, "No organization") }), el("div", { class: "job-meta", text: "Mode: " + safeText(approval.requestedMode, "passive") + " · DNS: " + safeText(approval.requestedDnsPolicy, "minimal") })]), badge(approval.status || "pending")]), el("div", { class: "row-note", text: safeText(approval.reason, "Approval required for elevated recon.") }), el("div", { class: "approval-actions" }, [el("button", { class: "btn", type: "button", onclick: () => decideApproval(approval.id, "approve"), text: "Approve and queue" }), el("button", { class: "btn ghost", type: "button", onclick: () => decideApproval(approval.id, "reject"), text: "Reject" })]) ])); }
+    async function loadJobs(preserveSelection) { const response = await fetch("/api/jobs", { headers: { "X-Org-Id": "default" } }); const jobs = await response.json(); state.jobs = Array.isArray(jobs) ? jobs : []; if (!preserveSelection || !state.selectedJobId || !state.jobs.some((job) => job.id === state.selectedJobId)) { const completed = state.jobs.find((job) => job.status === "completed"); state.selectedJobId = (completed || state.jobs[0] || {}).id || null; } renderJobsList(); if (state.selectedJobId) await selectJob(state.selectedJobId, true); else renderDetail(null); }
+    async function selectJob(jobId, fromRefresh) { state.selectedJobId = jobId; renderJobsList(); const response = await fetch("/api/jobs/" + jobId, { headers: { "X-Org-Id": "default" } }); const job = await response.json(); if (!response.ok) { renderDetail({ domain: "Job not found", status: "failed", error: job.error || "job_not_found" }); return; } state.selectedJob = job; renderDetail(job); if (!fromRefresh) history.replaceState(null, "", "#job-" + jobId); }
+    async function loadApprovals() { const response = await fetch("/api/approvals", { headers: { "X-Org-Id": "default" } }); const approvals = await response.json(); state.approvals = Array.isArray(approvals) ? approvals : []; renderApprovals(); }
+    async function decideApproval(approvalId, decision) { const response = await fetch("/api/approvals/" + approvalId + "/" + decision, { method: "POST", headers: orgHeaders, body: JSON.stringify({ note: decision + "d from dashboard V2." }) }); const payload = await response.json(); if (!response.ok) alert("Approval failed: " + (payload.error || "approval_failed")); await loadApprovals(); await loadJobs(true); }
+    async function rerunSelectedJob(job) { if (!job || !job.id) return; const response = await fetch("/api/jobs/" + job.id + "/rerun", { method: "POST", headers: orgHeaders }); const payload = await response.json(); if (!response.ok) { alert("Run again failed: " + (payload.error || "rerun_failed")); return; } if (payload.approvalRequired) alert("Approval request " + payload.approval.id + " created before rerun queueing."); await loadApprovals(); await loadJobs(false); }
+    document.getElementById("start-form").addEventListener("submit", async (event) => { event.preventDefault(); const button = document.getElementById("start-button"); button.disabled = true; setText("start-status", "Creating asset and recon plan..."); try { const response = await fetch("/api/recon/start", { method: "POST", headers: orgHeaders, body: JSON.stringify({ domain: document.getElementById("domain").value, company: document.getElementById("company").value, reconLevel: document.getElementById("recon-level").value }) }); const payload = await response.json(); if (!response.ok) throw new Error(payload.error || "request_failed"); if (payload.approvalRequired) { setText("start-status", "Approval request " + payload.approval.id + " created for " + payload.asset.domain + "."); await loadApprovals(); } else setText("start-status", "Started workflow " + payload.workflowId + " for " + payload.asset.domain + "."); await loadJobs(false); } catch (error) { setText("start-status", "Failed: " + (error.message || String(error))); } finally { button.disabled = false; } });
+    document.getElementById("chat-form").addEventListener("submit", async (event) => { event.preventDefault(); const output = document.getElementById("output"); output.textContent = "Sending..."; const response = await fetch("/api/agents/default/chat", { method: "POST", headers: orgHeaders, body: JSON.stringify({ message: document.getElementById("message").value }) }); output.textContent = await response.text(); });
+    document.getElementById("recon-level").addEventListener("change", (event) => setText("level-hint", reconLevelDescriptions[event.target.value] || reconLevelDescriptions["safe-passive"]));
+    document.getElementById("refresh-jobs").addEventListener("click", () => loadJobs(true));
+    document.getElementById("refresh-approvals").addEventListener("click", loadApprovals);
+    const hashMatch = location.hash.match(/^#job-(\\d+)$/);
+    if (hashMatch) state.selectedJobId = Number(hashMatch[1]);
+    loadApprovals();
+    loadJobs(Boolean(state.selectedJobId));
+    setInterval(() => { loadApprovals(); loadJobs(true); }, 15000);
+  </script>
+</body>
+</html>`;
 }
 
 function renderDashboard(): string {
