@@ -75,6 +75,7 @@ def evidence_snapshot(evidence: dict) -> list[dict]:
     third_party = evidence.get("third_party_intel", {})
     users = evidence.get("passive_users", {})
     web = evidence.get("web_signals", {})
+    subdomains = evidence.get("passive_subdomains", {})
 
     spf_status = "present" if dns.get("spf_raw") else "missing"
     dmarc_status = "present" if dns.get("dmarc_raw") else "missing"
@@ -82,6 +83,7 @@ def evidence_snapshot(evidence: dict) -> list[dict]:
     services = len(third_party.get("services", []) or [])
     passive_users = len(users.get("users", []) or [])
     header_samples = len(web.get("security_headers", []) or [])
+    subdomain_count = len(subdomains.get("subdomains", []) or [])
 
     return [
         {"label": "SPF", "value": spf_status, "source": "dns_mail_profile"},
@@ -89,6 +91,30 @@ def evidence_snapshot(evidence: dict) -> list[dict]:
         {"label": "DKIM selectors checked", "value": dkim_checked, "source": "dns_mail_profile"},
         {"label": "Third-party services", "value": services, "source": "third_party_intel"},
         {"label": "Passive user candidates", "value": passive_users, "source": "passive_users"},
+        {"label": "Discovered subdomains", "value": subdomain_count, "source": "passive_subdomains"},
         {"label": "Security-header samples", "value": header_samples, "source": "web_signals"},
     ]
 
+
+def subdomain_inventory(findings: dict) -> dict:
+    inventory = findings.get("subdomain_inventory")
+    if isinstance(inventory, dict):
+        return inventory
+    evidence = findings.get("evidence", {})
+    if isinstance(evidence, dict) and isinstance(evidence.get("passive_subdomains"), dict):
+        return evidence["passive_subdomains"]
+    return {}
+
+
+def subdomain_items(findings: dict) -> list[str]:
+    inventory = subdomain_inventory(findings)
+    subdomains = inventory.get("subdomains", [])
+    if not isinstance(subdomains, list):
+        return []
+    return sorted(str(item) for item in subdomains if item)
+
+
+def subdomain_attribution(findings: dict) -> dict:
+    inventory = subdomain_inventory(findings)
+    attribution = inventory.get("attribution", {})
+    return attribution if isinstance(attribution, dict) else {}

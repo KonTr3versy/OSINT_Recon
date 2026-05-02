@@ -7,6 +7,8 @@ from .common import (
     generated_at,
     score_items,
     sorted_backlog,
+    subdomain_attribution,
+    subdomain_items,
 )
 
 
@@ -53,6 +55,24 @@ def build_summary(findings: dict) -> str:
     lines.append("## Evidence Snapshot")
     for item in evidence_snapshot(evidence):
         lines.append(f"- {item['label']}: {item['value']} (source={item['source']})")
+    lines.append("")
+
+    lines.append("## Discovered Subdomains")
+    subdomains = subdomain_items(findings)
+    attribution = subdomain_attribution(findings)
+    if not subdomains:
+        lines.append("- No subdomains were discovered from passive sources.")
+    else:
+        per_source = attribution.get("per_source_counts", {})
+        if per_source:
+            rendered_counts = ", ".join(f"{source}: {count}" for source, count in per_source.items())
+            lines.append(f"- Source counts: {rendered_counts}")
+        warnings = attribution.get("warnings", [])
+        if warnings:
+            for warning in warnings:
+                lines.append(f"- Source warning: {warning}")
+        for subdomain in subdomains:
+            lines.append(f"- {subdomain}")
     lines.append("")
 
     lines.append("## Prioritized Remediation Backlog")

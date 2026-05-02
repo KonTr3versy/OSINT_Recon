@@ -164,6 +164,7 @@ def run(results: dict) -> SynthesisModuleResult:
     third_party = results.get("third_party_intel", {})
     web = results.get("web_signals", {})
     users = results.get("passive_users", {})
+    subdomains = results.get("passive_subdomains", {})
 
     spf = dns.get("spf", {})
     dmarc = dns.get("dmarc", {})
@@ -234,6 +235,7 @@ def run(results: dict) -> SynthesisModuleResult:
         "exposure_score": exposure_score,
         "email_notes": email_notes,
         "exposure_notes": exposure_notes,
+        "subdomain_count": len(subdomains.get("subdomains", []) or []),
     }
 
     spf_raw = spf.get("raw") or ""
@@ -251,6 +253,18 @@ def run(results: dict) -> SynthesisModuleResult:
         },
         "third_party_intel": third_party,
         "passive_users": users,
+        "passive_subdomains": {
+            "subdomains": subdomains.get("subdomains", []),
+            "attribution": subdomains.get("attribution", {}),
+            "removed_wildcards": subdomains.get("removed_wildcards", 0),
+            "invalid_entries": subdomains.get("invalid_entries", 0),
+            "total_seen": subdomains.get("total_seen", 0),
+            "provenance": {
+                "source": "passive_subdomains",
+                "confidence": "medium",
+                "last_verified_at": datetime.now(timezone.utc).isoformat(),
+            },
+        },
         "web_signals": {
             "security_headers": security_headers,
             "provenance": {
@@ -266,4 +280,5 @@ def run(results: dict) -> SynthesisModuleResult:
         scoring_rubric=scoring_rubric,
         prioritized_backlog=prioritized,
         evidence=evidence,
+        subdomain_inventory=evidence["passive_subdomains"],
     )

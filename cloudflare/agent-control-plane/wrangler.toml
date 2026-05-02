@@ -35,3 +35,8 @@ bucket_name = "osint-recon-artifacts"
 [[queues.producers]]
 binding = "RECON_JOBS"
 queue = "osint-recon-jobs"
+
+[[workflows]]
+name = "osint-recon-run-workflow"
+binding = "RECON_RUN_WORKFLOW"
+class_name = "ReconRunWorkflow"

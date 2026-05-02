@@ -10,6 +10,7 @@ def test_reporting_outputs_basic_sections():
             "exposure_score": 90,
             "email_notes": ["No SPF record"],
             "exposure_notes": [],
+            "subdomain_count": 2,
         },
         "scoring_rubric": {
             "email_posture": {
@@ -51,7 +52,21 @@ def test_reporting_outputs_basic_sections():
             },
             "third_party_intel": {"services": []},
             "passive_users": {"users": []},
+            "passive_subdomains": {
+                "subdomains": ["login.example.com", "vpn.example.com"],
+                "attribution": {
+                    "per_source_counts": {"certspotter": 2},
+                    "warnings": ["crt.sh failed"],
+                },
+            },
             "web_signals": {"security_headers": []},
+        },
+        "subdomain_inventory": {
+            "subdomains": ["login.example.com", "vpn.example.com"],
+            "attribution": {
+                "per_source_counts": {"certspotter": 2},
+                "warnings": ["crt.sh failed"],
+            },
         },
     }
     md = build_summary(findings)
@@ -61,6 +76,9 @@ def test_reporting_outputs_basic_sections():
     assert "Executive Overview" in md
     assert "Scoring Rationale" in md
     assert "Evidence Snapshot" in md
+    assert "Discovered Subdomains" in md
+    assert "login.example.com" in md
+    assert "Source counts: certspotter: 2" in md
     assert "Publish SPF" in md
     assert md.index("High | Publish SPF") < md.index("Medium | Enable DKIM")
     assert "priority,title,evidence,remediation,source,confidence,evidence_ref" in csv_text
@@ -68,4 +86,6 @@ def test_reporting_outputs_basic_sections():
     assert "Executive Overview" in html
     assert "Scoring Rationale" in html
     assert "Evidence Snapshot" in html
+    assert "Discovered Subdomains" in html
+    assert "vpn.example.com" in html
     assert "dns_mail_profile" in html

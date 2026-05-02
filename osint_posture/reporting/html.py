@@ -9,6 +9,8 @@ from .common import (
     generated_at,
     score_items,
     sorted_backlog,
+    subdomain_attribution,
+    subdomain_items,
 )
 
 
@@ -21,6 +23,8 @@ def build_html(findings: dict) -> str:
     counts = backlog_counts(backlog)
     applied_rules = applied_scoring_rules(scoring_rubric)
     snapshot = evidence_snapshot(evidence)
+    subdomains = subdomain_items(findings)
+    subdomain_sources = subdomain_attribution(findings)
     notes = [*summary.get("email_notes", []), *summary.get("exposure_notes", [])]
 
     def li(items: list[str]) -> str:
@@ -59,6 +63,20 @@ def build_html(findings: dict) -> str:
         f"<td>{escape(str(rule['evidence_ref']))}</td>"
         "</tr>"
         for rule in applied_rules
+    )
+
+    subdomain_source_counts = subdomain_sources.get("per_source_counts", {})
+    subdomain_source_html = "".join(
+        f"<span class=\"pill\">{escape(str(source))}: {escape(str(count))}</span>"
+        for source, count in subdomain_source_counts.items()
+    ) or "<span class=\"pill\">No passive source counts</span>"
+    subdomain_warnings = "".join(
+        f"<li>{escape(str(warning))}</li>"
+        for warning in subdomain_sources.get("warnings", [])
+    )
+    subdomain_rows = "".join(
+        f"<tr><td>{escape(subdomain)}</td></tr>"
+        for subdomain in subdomains
     )
 
     backlog_rows = ""
@@ -161,6 +179,20 @@ def build_html(findings: dict) -> str:
     </thead>
     <tbody>
       {evidence_rows}
+    </tbody>
+  </table>
+
+  <h2>Discovered Subdomains</h2>
+  <div class=\"pills\">{subdomain_source_html}</div>
+  {f'<ul>{subdomain_warnings}</ul>' if subdomain_warnings else ''}
+  <table>
+    <thead>
+      <tr>
+        <th>Subdomain</th>
+      </tr>
+    </thead>
+    <tbody>
+      {subdomain_rows or '<tr><td>No subdomains were discovered from passive sources.</td></tr>'}
     </tbody>
   </table>
 

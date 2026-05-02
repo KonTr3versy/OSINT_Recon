@@ -58,3 +58,4 @@ class SynthesisModuleResult(BaseModel):
     scoring_rubric: dict
     prioritized_backlog: list[dict]
     evidence: dict
+    subdomain_inventory: dict = Field(default_factory=dict)

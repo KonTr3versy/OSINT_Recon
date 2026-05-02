@@ -21,13 +21,33 @@ The Worker runs locally at `http://localhost:8787`.
 
 ## First Calls
 
-Start one-click passive recon:
+Start recon from the dashboard or API. The default `safe-passive` level queues immediately:
 
 ```bash
 curl -X POST http://localhost:8787/api/recon/start \
   -H 'content-type: application/json' \
   -H 'X-Org-Id: default' \
-  -d '{"domain":"example.com","company":"Example"}'
+  -d '{"domain":"example.com","company":"Example","reconLevel":"safe-passive"}'
+```
+
+Supported dashboard/API recon levels:
+
+- `safe-passive`: passive mode, minimal DNS, no target HTTP, no approval.
+- `passive-full-dns`: passive mode, full DNS, approval required.
+- `low-noise`: capped in-scope target HTTP checks, minimal DNS, approval required.
+- `low-noise-full-dns`: capped in-scope target HTTP checks plus full DNS, approval required.
+- `third-party-intel`: passive/minimal run with external intel providers enabled, approval required.
+
+Elevated levels return `approvalRequired: true`. Approve and queue them with:
+
+```bash
+curl -X POST http://localhost:8787/api/approvals/1/approve \
+  -H 'content-type: application/json' \
+  -H 'X-Org-Id: default' \
+  -d '{"note":"Approved for defensive recon."}'
+
+curl -X POST http://localhost:8787/api/recon-plans/1/queue \
+  -H 'X-Org-Id: default'
 ```
 
 List jobs and fetch a recorded artifact through the Access-protected Worker:

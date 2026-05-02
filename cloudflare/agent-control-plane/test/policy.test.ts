@@ -26,6 +26,13 @@ describe("Cloudflare recon policy", () => {
     expect(proposeReconPlan(asset, "passive", "full").requiresApproval).toBe(true);
   });
 
+  it("requires approval for third-party intel", () => {
+    const plan = proposeReconPlan(asset, "passive", "minimal", true);
+
+    expect(plan.requiresApproval).toBe(true);
+    expect(plan.expectedSources).toContain("third_party_intel");
+  });
+
   it("does not queue approval-gated plans before approval", () => {
     expect(canQueuePlan(true, "pending")).toBe(false);
     expect(canQueuePlan(true, "approved")).toBe(true);
